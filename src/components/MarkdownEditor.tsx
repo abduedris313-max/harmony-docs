@@ -22,6 +22,9 @@ import { MarkdownHelpModal } from './MarkdownHelpModal';
 import { FindAndReplaceBar } from './FindAndReplaceBar';
 import { TableBuilderModal } from './TableBuilderModal';
 import { FloatingToolMenu } from './FloatingToolMenu';
+import { TableOfContentsPanel, HeadingItem } from './TableOfContentsPanel';
+import { SpellcheckPanel } from './SpellcheckPanel';
+import { detectTyposInMarkdown, TypoItem } from '../utils/spellchecker';
 import { ViewMode, AiAction, DocumentStats } from '../types';
 import { renderMarkdownToHtml } from '../utils/markdownParser';
 
@@ -34,6 +37,7 @@ interface MarkdownEditorProps {
   isRefining: boolean;
   onShowToast: (title: string, message?: string, type?: 'success' | 'error' | 'info') => void;
   lastAutoSaveTime?: number | null;
+  onOpenBookLibrary?: () => void;
 }
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
@@ -45,6 +49,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   isRefining,
   onShowToast,
   lastAutoSaveTime,
+  onOpenBookLibrary,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [showAiToolbar, setShowAiToolbar] = useState(false);
@@ -52,6 +57,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showTableBuilder, setShowTableBuilder] = useState(false);
+  const [showSpellcheck, setShowSpellcheck] = useState(false);
+
+  // Custom User Dictionary for Spellchecking
+  const [userDictionary, setUserDictionary] = useState<Set<string>>(
+    () => new Set(['ais', 'applet', 'workflow', 'dev'])
+  );
+
+  // Editor Theme Style State ('document' paper-like vs 'code' monospaced)
+  const [editorTheme, setEditorTheme] = useState<'document' | 'code'>('document');
+
+  // iOS Reader Preferences State
+  const [readerTheme, setReaderTheme] = useState<'paper' | 'sepia' | 'dark'>('paper');
+  const [readerFontSize, setReaderFontSize] = useState<number>(15);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -78,12 +96,15 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     return { wordCount, charCount, lineCount, readingTimeMinutes };
   }, [markdown]);
 
-  // Extract Heading Outline
+  // Active selected heading ID for TOC navigation
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+
+  // Extract Heading Outline (H1 - H6)
   const headings = useMemo(() => {
     const lines = markdown.split('\n');
-    const result: { id: string; text: string; level: number; lineIndex: number }[] = [];
+    const result: HeadingItem[] = [];
     lines.forEach((line, index) => {
-      const match = line.match(/^(#{1,4})\s+(.+)$/);
+      const match = line.match(/^(#{1,6})\s+(.+)$/);
       if (match) {
         const level = match[1].length;
         const text = match[2].trim();
@@ -93,6 +114,95 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     });
     return result;
   }, [markdown]);
+
+  // Jump to specific section from Table of Contents
+  const handleSelectHeading = (heading: HeadingItem) => {
+    setActiveHeadingId(heading.id);
+
+    // 1. Scroll and select in Editor Textarea
+    if (textareaRef.current) {
+      const lines = markdown.split('\n');
+      let pos = 0;
+      for (let l = 0; l < heading.lineIndex; l++) {
+        pos += lines[l].length + 1;
+      }
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(pos, pos + lines[heading.lineIndex].length);
+
+      const lineHeight = 18;
+      textareaRef.current.scrollTop = Math.max(0, heading.lineIndex * lineHeight - 80);
+    }
+
+    // 2. Scroll into view in Live HTML Preview
+    if (previewRef.current) {
+      const targetElement =
+        previewRef.current.querySelector(`#${CSS.escape(heading.id)}`) ||
+        previewRef.current.querySelector(`[data-heading-id="${CSS.escape(heading.id)}"]`);
+
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Flash ring highlight
+        targetElement.classList.add('ring-2', 'ring-[#007AFF]', 'ring-offset-2', 'rounded-lg', 'transition-all');
+        setTimeout(() => {
+          targetElement.classList.remove('ring-2', 'ring-[#007AFF]', 'ring-offset-2', 'rounded-lg');
+        }, 2000);
+      }
+    }
+  };
+
+  // Insert a generated Markdown Table of Contents block into the document
+  const handleInsertTocMarkdown = () => {
+    if (headings.length === 0) {
+      onShowToast('No Headings Found', 'Add headings like # Heading 1 to your document first', 'info');
+      return;
+    }
+
+    const tocList = headings
+      .map((h) => `${'  '.repeat(h.level - 1)}- [${h.text}](#${h.id})`)
+      .join('\n');
+
+    const tocMarkdown = `\n## Table of Contents\n${tocList}\n\n`;
+    handleInsertText(tocMarkdown, '');
+    onShowToast('TOC Inserted', 'Added Markdown Table of Contents block to document');
+  };
+
+  // Detect Typos with Dictionary Engine
+  const typos = useMemo(() => {
+    return detectTyposInMarkdown(markdown, userDictionary);
+  }, [markdown, userDictionary]);
+
+  // Jump to and select typo in editor
+  const handleJumpToTypo = (typo: TypoItem) => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(typo.startPos, typo.endPos);
+
+      const lines = markdown.substring(0, typo.startPos).split('\n');
+      const lineIdx = lines.length - 1;
+      const lineHeight = 20;
+      textareaRef.current.scrollTop = Math.max(0, lineIdx * lineHeight - 60);
+    }
+  };
+
+  // Replace typo with suggested correction
+  const handleReplaceTypo = (typo: TypoItem, replacement: string) => {
+    const before = markdown.substring(0, typo.startPos);
+    const after = markdown.substring(typo.endPos);
+    const newMarkdown = before + replacement + after;
+    onChangeMarkdown(newMarkdown);
+    onShowToast('Typo Corrected', `Replaced "${typo.word}" with "${replacement}"`);
+  };
+
+  // Add word to custom dictionary
+  const handleAddToDictionary = (word: string) => {
+    setUserDictionary((prev) => {
+      const next = new Set(prev);
+      next.add(word.toLowerCase());
+      return next;
+    });
+    onShowToast('Added to Dictionary', `Word "${word}" will no longer be flagged as a typo`);
+  };
 
   // Handle Tab key in textarea for clean editing
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -171,22 +281,22 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 py-3">
       
-      {/* Top Document Header Bar */}
-      <div className="bg-white border border-slate-200 rounded-t-xl p-3 flex flex-wrap items-center justify-between gap-3 text-slate-800 shadow-sm">
+      {/* Top iOS Document Reader Header Bar */}
+      <div className="bg-white/90 backdrop-blur-md border border-black/5 rounded-t-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-slate-800 shadow-xs">
         
         {/* Document Title & File Info */}
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-red-50 border border-red-200 text-red-600 flex items-center justify-center font-bold text-xs">
-            PDF
+          <div className="w-8 h-8 rounded-full bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center font-bold text-xs">
+            <BookOpen className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2 tracking-tight">
               <span>{filename || 'Converted Document.md'}</span>
-              <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded font-mono font-medium">
+              <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-medium">
                 {stats.wordCount} words
               </span>
             </h2>
-            <div className="flex flex-wrap items-center space-x-3 text-[11px] text-slate-500">
+            <div className="flex flex-wrap items-center space-x-2.5 text-[11px] text-slate-500">
               <span>{stats.charCount} chars</span>
               <span>•</span>
               <span>{stats.lineCount} lines</span>
@@ -198,9 +308,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               {lastAutoSaveTime && (
                 <>
                   <span>•</span>
-                  <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 font-medium text-[10px]">
+                  <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium text-[10px]">
                     <Check className="w-3 h-3" />
-                    Auto-saved {new Date(lastAutoSaveTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    Auto-saved {new Date(lastAutoSaveTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </>
               )}
@@ -208,73 +318,124 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </div>
         </div>
 
-        {/* View Mode Controls */}
-        <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-md border border-slate-200">
-          <button
-            onClick={() => setViewMode('split')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center space-x-1 transition-colors ${
-              viewMode === 'split'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-            }`}
-            title="Split Editor & Preview"
-          >
-            <Columns className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Split</span>
-          </button>
+        {/* Right Action Controls: iOS Segmented Control + Reader Appearance */}
+        <div className="flex flex-wrap items-center gap-2">
+          
+          {/* iOS Reader Font Size & Theme Picker (Visible in Preview/Split mode) */}
+          {(viewMode === 'preview' || viewMode === 'split') && (
+            <div className="flex items-center space-x-1.5 bg-[#E5E5EA]/70 p-1 rounded-full border border-slate-200/50">
+              
+              {/* Font Size decrease/increase */}
+              <button
+                onClick={() => setReaderFontSize((prev) => Math.max(12, prev - 1))}
+                className="px-2 py-0.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-full hover:bg-white/80 transition-colors"
+                title="Decrease font size"
+              >
+                A-
+              </button>
+              <span className="text-[10px] text-slate-500 font-mono select-none">{readerFontSize}px</span>
+              <button
+                onClick={() => setReaderFontSize((prev) => Math.min(24, prev + 1))}
+                className="px-2 py-0.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-full hover:bg-white/80 transition-colors"
+                title="Increase font size"
+              >
+                A+
+              </button>
 
-          <button
-            onClick={() => setViewMode('editor')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center space-x-1 transition-colors ${
-              viewMode === 'editor'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-            }`}
-            title="Editor Only"
-          >
-            <Code2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Editor</span>
-          </button>
+              <div className="w-px h-3.5 bg-slate-300/80 mx-0.5" />
 
-          <button
-            onClick={() => setViewMode('preview')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center space-x-1 transition-colors ${
-              viewMode === 'preview'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-            }`}
-            title="Preview Only"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Preview</span>
-          </button>
-
-          {pdfDataUrl && (
-            <button
-              onClick={() => setViewMode('compare')}
-              className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center space-x-1 transition-colors ${
-                viewMode === 'compare'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-              title="Compare with Original PDF"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-600" />
-              <span className="hidden sm:inline">PDF Side-by-Side</span>
-            </button>
+              {/* iOS Themes */}
+              <button
+                onClick={() => setReaderTheme('paper')}
+                className={`w-4 h-4 rounded-full border border-slate-300 bg-white transition-transform ${
+                  readerTheme === 'paper' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                }`}
+                title="Paper White Theme"
+              />
+              <button
+                onClick={() => setReaderTheme('sepia')}
+                className={`w-4 h-4 rounded-full border border-amber-300 bg-[#F8F1E5] transition-transform ${
+                  readerTheme === 'sepia' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                }`}
+                title="Warm Sepia Theme"
+              />
+              <button
+                onClick={() => setReaderTheme('dark')}
+                className={`w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-transform ${
+                  readerTheme === 'dark' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                }`}
+                title="Dark Night Theme"
+              />
+            </div>
           )}
 
-          <div className="w-px h-4 bg-slate-300 mx-1" />
+          {/* iOS Segmented Control */}
+          <div className="flex items-center p-1 bg-[#E3E3E8] rounded-full text-xs font-semibold shadow-inner">
+            <button
+              onClick={() => setViewMode('split')}
+              className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                viewMode === 'split'
+                  ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Split Editor & Preview"
+            >
+              <Columns className="w-3.5 h-3.5 text-[#007AFF]" />
+              <span className="hidden sm:inline">Split</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('editor')}
+              className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                viewMode === 'editor'
+                  ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Editor Only"
+            >
+              <Code2 className="w-3.5 h-3.5 text-[#007AFF]" />
+              <span className="hidden sm:inline">Editor</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('preview')}
+              className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                viewMode === 'preview'
+                  ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="iOS Reader View"
+            >
+              <Eye className="w-3.5 h-3.5 text-[#007AFF]" />
+              <span className="hidden sm:inline">iOS Reader</span>
+            </button>
+
+            {pdfDataUrl && (
+              <button
+                onClick={() => setViewMode('compare')}
+                className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                  viewMode === 'compare'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Compare with Original PDF"
+              >
+                <FileText className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden sm:inline">PDF Compare</span>
+              </button>
+            )}
+          </div>
 
           <button
             onClick={() => setShowOutline(!showOutline)}
-            className={`p-1.5 rounded transition-colors ${
-              showOutline ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'text-slate-500 hover:text-slate-800'
+            className={`p-2 rounded-full transition-all ${
+              showOutline ? 'bg-[#007AFF] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200/70'
             }`}
             title="Document Heading Outline"
           >
-            <List className="w-3.5 h-3.5" />
+            <List className="w-4 h-4" />
           </button>
+
         </div>
 
       </div>
@@ -309,98 +470,125 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         onOpenHelp={() => setShowHelpModal(true)}
         onToggleSearch={() => setShowSearch(!showSearch)}
         onOpenTableBuilder={() => setShowTableBuilder(true)}
+        editorTheme={editorTheme}
+        onChangeEditorTheme={setEditorTheme}
+        onToggleSpellcheck={() => setShowSpellcheck(!showSpellcheck)}
+        typosCount={typos.length}
       />
 
       {/* Main Content View (Editor + Preview) */}
       <div className="flex-1 bg-white border-x border-slate-200 grid grid-cols-1 md:grid-cols-2 overflow-hidden relative">
         
-        {/* Document Headings Outline Panel */}
+        {/* Dynamic Table of Contents Drawer Panel */}
         {showOutline && (
-          <div className="absolute top-0 right-0 z-20 w-64 h-full bg-white/95 border-l border-slate-200 p-3 shadow-xl overflow-y-auto backdrop-blur-md">
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-                Table of Contents
-              </span>
-              <button
-                onClick={() => setShowOutline(false)}
-                className="text-xs text-slate-400 hover:text-slate-700 font-bold"
-              >
-                &times;
-              </button>
-            </div>
+          <TableOfContentsPanel
+            headings={headings}
+            activeHeadingId={activeHeadingId}
+            onSelectHeading={handleSelectHeading}
+            onClose={() => setShowOutline(false)}
+            onInsertTocMarkdown={handleInsertTocMarkdown}
+          />
+        )}
 
-            {headings.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-4 text-center">No headings found in document</p>
-            ) : (
-              <div className="space-y-1">
-                {headings.map((h, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      if (textareaRef.current) {
-                        const lines = markdown.split('\n');
-                        let pos = 0;
-                        for (let l = 0; l < h.lineIndex; l++) {
-                          pos += lines[l].length + 1;
-                        }
-                        textareaRef.current.focus();
-                        textareaRef.current.setSelectionRange(pos, pos + lines[h.lineIndex].length);
-                      }
-                    }}
-                    className={`block w-full text-left text-xs hover:text-blue-600 hover:bg-slate-50 rounded px-2 py-1 transition-colors truncate ${
-                      h.level === 1 ? 'font-semibold text-slate-800' : 'text-slate-600'
-                    }`}
-                    style={{ paddingLeft: `${(h.level - 1) * 12 + 8}px` }}
-                  >
-                    {h.text}
-                  </button>
-                ))}
+        {/* Spellcheck & Typos Drawer Panel */}
+        {showSpellcheck && (
+          <SpellcheckPanel
+            typos={typos}
+            userDictionary={userDictionary}
+            onReplaceTypo={handleReplaceTypo}
+            onAddToDictionary={handleAddToDictionary}
+            onJumpToTypo={handleJumpToTypo}
+            onClose={() => setShowSpellcheck(false)}
+          />
+        )}
+
+        {/* 1. Editor Textarea View (Document Paper-like vs Code Monospaced) */}
+        {(viewMode === 'split' || viewMode === 'editor' || viewMode === 'compare') && (
+          <div
+            className={`h-full flex flex-col border-r border-slate-200/80 overflow-y-auto ${
+              viewMode === 'editor' ? 'col-span-2' : ''
+            } ${editorTheme === 'document' ? 'bg-[#F4F4F6] p-4 sm:p-6' : 'bg-white'}`}
+          >
+            {editorTheme === 'document' ? (
+              <div className="max-w-2xl w-full mx-auto bg-white rounded-2xl shadow-sm border border-black/5 p-6 sm:p-10 flex-1 flex flex-col transition-all min-h-[calc(100%-1rem)]">
+                <div className="text-[11px] font-semibold text-[#007AFF] uppercase tracking-wider mb-2 flex items-center justify-between border-b border-black/5 pb-2">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Document View Style (Paper)</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">Proportional typography</span>
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={markdown}
+                  onChange={(e) => onChangeMarkdown(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Type or edit your document content..."
+                  className="w-full flex-1 bg-transparent text-slate-900 font-sans text-sm sm:text-base leading-relaxed resize-none focus:outline-none selection:bg-[#007AFF]/20 selection:text-[#007AFF]"
+                  spellCheck={true}
+                />
               </div>
+            ) : (
+              <textarea
+                ref={textareaRef}
+                value={markdown}
+                onChange={(e) => onChangeMarkdown(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Write or paste Markdown content here..."
+                className="w-full h-full bg-white text-slate-800 p-4 font-mono text-xs sm:text-sm leading-relaxed resize-none focus:outline-none selection:bg-blue-100 selection:text-blue-900"
+                spellCheck={false}
+              />
             )}
           </div>
         )}
 
-        {/* 1. Editor Textarea View */}
-        {(viewMode === 'split' || viewMode === 'editor' || viewMode === 'compare') && (
-          <div className={`h-full flex flex-col border-r border-slate-200 ${viewMode === 'editor' ? 'col-span-2' : ''}`}>
-            <textarea
-              ref={textareaRef}
-              value={markdown}
-              onChange={(e) => onChangeMarkdown(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Write or paste Markdown content here..."
-              className="w-full h-full bg-white text-slate-800 p-4 font-mono text-xs leading-relaxed resize-none focus:outline-none selection:bg-blue-100 selection:text-blue-900"
-              spellCheck={false}
-            />
-          </div>
-        )}
-
-        {/* 2. Live Rendered Preview View */}
+        {/* 2. Live Rendered iOS Document Reader Preview View */}
         {(viewMode === 'split' || viewMode === 'preview') && (
           <div
             ref={previewRef}
-            className={`h-full overflow-y-auto p-6 bg-slate-50/70 text-slate-800 border-l border-slate-200 ${
-              viewMode === 'preview' ? 'col-span-2' : ''
-            }`}
+            className={`h-full overflow-y-auto p-4 sm:p-8 border-l border-slate-200/80 transition-colors ${
+              readerTheme === 'sepia'
+                ? 'bg-[#F4EFE6] text-[#433422]'
+                : readerTheme === 'dark'
+                ? 'bg-[#1C1C1E] text-[#F2F2F7]'
+                : 'bg-[#F2F2F7] text-slate-800'
+            } ${viewMode === 'preview' ? 'col-span-2' : ''}`}
           >
             <div
-              className="prose prose-slate max-w-none text-xs leading-relaxed
-                prose-headings:text-slate-900 prose-headings:font-bold
-                prose-h1:text-xl prose-h1:border-b prose-h1:border-slate-200 prose-h1:pb-2 prose-h1:mt-2
-                prose-h2:text-lg prose-h2:border-b prose-h2:border-slate-200 prose-h2:pb-1.5
-                prose-h3:text-base prose-h3:text-blue-700
-                prose-p:text-slate-700 prose-p:my-2
-                prose-a:text-blue-600 prose-a:underline hover:prose-a:text-blue-800
-                prose-code:text-blue-800 prose-code:bg-blue-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
-                prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:rounded-xl prose-pre:p-4
-                prose-blockquote:border-l-4 prose-blockquote:border-blue-500 prose-blockquote:bg-blue-50/50 prose-blockquote:py-1 prose-blockquote:px-3 prose-blockquote:text-slate-600 prose-blockquote:italic
-                prose-table:w-full prose-table:border-collapse prose-table:my-4
-                prose-th:bg-slate-100 prose-th:border prose-th:border-slate-200 prose-th:p-2.5 prose-th:text-slate-900 prose-th:font-semibold
-                prose-td:border prose-td:border-slate-200 prose-td:p-2 prose-td:text-slate-700
-                prose-img:rounded-xl prose-img:border prose-img:border-slate-200 prose-img:mx-auto"
-              dangerouslySetInnerHTML={{ __html: renderedHtml }}
-            />
+              className={`max-w-3xl mx-auto rounded-2xl p-6 sm:p-12 transition-all ios-page-shadow border ${
+                readerTheme === 'sepia'
+                  ? 'bg-[#F8F1E5] border-amber-900/10 text-[#433422]'
+                  : readerTheme === 'dark'
+                  ? 'bg-[#2C2C2E] border-white/10 text-[#F2F2F7]'
+                  : 'bg-white border-black/5 text-slate-900'
+              }`}
+              style={{ fontSize: `${readerFontSize}px` }}
+            >
+              <div
+                className={`prose max-w-none leading-relaxed transition-colors
+                  ${
+                    readerTheme === 'dark'
+                      ? 'prose-invert prose-headings:text-slate-100 prose-p:text-slate-300 prose-a:text-blue-400'
+                      : readerTheme === 'sepia'
+                      ? 'prose-headings:text-[#2E2214] prose-p:text-[#433422] prose-a:text-[#007AFF]'
+                      : 'prose-slate prose-headings:text-slate-900 prose-p:text-slate-800 prose-a:text-[#007AFF]'
+                  }
+                  prose-headings:font-semibold prose-headings:tracking-tight
+                  prose-h1:text-2xl prose-h1:border-b prose-h1:pb-3 prose-h1:mt-2
+                  prose-h2:text-xl prose-h2:border-b prose-h2:pb-2
+                  prose-h3:text-lg
+                  prose-a:underline hover:opacity-80
+                  prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
+                  prose-pre:rounded-xl prose-pre:p-4
+                  prose-blockquote:border-l-4 prose-blockquote:border-[#007AFF] prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:italic
+                  prose-table:w-full prose-table:border-collapse prose-table:my-4
+                  prose-th:border prose-th:p-2.5 prose-th:font-semibold
+                  prose-td:border prose-td:p-2
+                  prose-img:rounded-2xl prose-img:border prose-img:border-black/5 prose-img:mx-auto`
+                }
+                dangerouslySetInnerHTML={{ __html: renderedHtml }}
+              />
+            </div>
           </div>
         )}
 
@@ -438,6 +626,12 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         onToggleAiDrawer={() => setShowAiToolbar(!showAiToolbar)}
         onOpenHelp={() => setShowHelpModal(true)}
         onCopyAll={handleCopyAll}
+        onToggleOutline={() => setShowOutline(!showOutline)}
+        editorTheme={editorTheme}
+        onChangeEditorTheme={setEditorTheme}
+        onToggleSpellcheck={() => setShowSpellcheck(!showSpellcheck)}
+        typosCount={typos.length}
+        onOpenBookLibrary={onOpenBookLibrary}
       />
 
       {/* Markdown Quick Reference Help Modal */}

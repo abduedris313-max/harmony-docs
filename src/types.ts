@@ -72,3 +72,41 @@ export interface CloudFile {
   content?: string;
   pdfDataUrl?: string;
 }
+
+// Book Library & Personal Collection Types
+export type BookSource = 'local' | 'cloud' | 'online';
+
+export type BookShelf = 'Currently Reading' | 'To Read' | 'Completed' | 'Favorites' | 'Technical' | 'Classics';
+
+export interface Bookmark {
+  id: string;
+  bookId: string;
+  chapterOrSection: string;
+  note: string;
+  timestamp: number;
+  progressPercent: number;
+  quote?: string;
+}
+
+export interface Book {
+  id: string;
+  title: string;
+  author: string;
+  source: BookSource;
+  category: string;
+  shelf: BookShelf;
+  content: string;
+  coverColor: string;
+  coverImageUrl?: string;
+  rating?: number; // 1 to 5 stars
+  progressPercent: number; // 0 to 100
+  lastReadTimestamp: number;
+  tags: string[];
+  wordCount: number;
+  description?: string;
+  fileFormat?: 'md' | 'epub' | 'pdf' | 'txt';
+  cloudProvider?: CloudProvider;
+  isFavorite?: boolean;
+  bookmarks: Bookmark[];
+}
+

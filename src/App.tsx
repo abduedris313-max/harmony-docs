@@ -6,13 +6,17 @@ import { HistoryDrawer } from './components/HistoryDrawer';
 import { VersionHistoryDrawer } from './components/VersionHistoryDrawer';
 import { CloudStorageModal } from './components/CloudStorageModal';
 import { ConversionSettingsModal } from './components/ConversionSettingsModal';
+import { BookLibraryModal } from './components/BookLibraryModal';
+import { BookReaderModal } from './components/BookReaderModal';
 import { ToastContainer } from './components/Toast';
-import { ConversionOptions, HistoryItem, ToastMessage, AiAction, VersionSnapshot } from './types';
+import { ConversionOptions, HistoryItem, ToastMessage, AiAction, VersionSnapshot, Book, Bookmark, BookShelf } from './types';
 import { SAMPLE_PDFS, SamplePdf } from './data/samplePdfs';
+import { INITIAL_BOOKS } from './data/sampleBooks';
 
 const STORAGE_KEY = 'pdf_to_md_history_v1';
 const SNAPSHOTS_KEY = 'pdf_to_md_snapshots_v1';
 const AUTOSAVE_KEY = 'pdf_to_md_autosave_v1';
+const BOOKS_KEY = 'pdf_to_md_books_v1';
 
 export default function App() {
   const [activeMarkdown, setActiveMarkdown] = useState<string>('');
@@ -20,6 +24,28 @@ export default function App() {
   const [activePdfDataUrl, setActivePdfDataUrl] = useState<string | undefined>(undefined);
 
   const [lastAutoSaveTime, setLastAutoSaveTime] = useState<number | null>(null);
+
+  // Book Library State
+  const [books, setBooks] = useState<Book[]>(() => {
+    try {
+      const saved = localStorage.getItem(BOOKS_KEY);
+      return saved ? JSON.parse(saved) : INITIAL_BOOKS;
+    } catch {
+      return INITIAL_BOOKS;
+    }
+  });
+
+  const [isBookLibraryOpen, setIsBookLibraryOpen] = useState<boolean>(false);
+  const [activeReadingBook, setActiveReadingBook] = useState<Book | null>(null);
+
+  // Persist Books to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+    } catch (e) {
+      console.warn('Failed to save books to localStorage:', e);
+    }
+  }, [books]);
 
   // Restore auto-saved draft on initial mount if available
   useEffect(() => {
@@ -432,6 +458,86 @@ export default function App() {
     }
   };
 
+  // Book Library Handlers
+  const handleImportBook = (newBookPartial: Partial<Book>) => {
+    const fullBook: Book = {
+      id: `book-${Date.now()}`,
+      title: newBookPartial.title || 'Untitled Book',
+      author: newBookPartial.author || 'Unknown Author',
+      source: newBookPartial.source || 'local',
+      category: newBookPartial.category || 'General',
+      shelf: newBookPartial.shelf || 'To Read',
+      content: newBookPartial.content || '',
+      coverColor: newBookPartial.coverColor || 'from-[#007AFF] to-indigo-900',
+      coverImageUrl: newBookPartial.coverImageUrl,
+      rating: newBookPartial.rating || 5,
+      progressPercent: newBookPartial.progressPercent || 0,
+      lastReadTimestamp: Date.now(),
+      tags: newBookPartial.tags || ['Personal'],
+      wordCount: newBookPartial.wordCount || 100,
+      description: newBookPartial.description,
+      fileFormat: newBookPartial.fileFormat || 'md',
+      isFavorite: newBookPartial.isFavorite || false,
+      bookmarks: newBookPartial.bookmarks || [],
+    };
+
+    setBooks((prev) => [fullBook, ...prev]);
+  };
+
+  const handleDeleteBook = (bookId: string) => {
+    if (window.confirm('Remove this book from your library collection?')) {
+      setBooks((prev) => prev.filter((b) => b.id !== bookId));
+      showToast('Book Deleted', 'Removed book from collection');
+    }
+  };
+
+  const handleToggleFavoriteBook = (bookId: string) => {
+    setBooks((prev) =>
+      prev.map((b) => (b.id === bookId ? { ...b, isFavorite: !b.isFavorite } : b))
+    );
+  };
+
+  const handleUpdateBookShelf = (bookId: string, shelf: BookShelf) => {
+    setBooks((prev) =>
+      prev.map((b) => (b.id === bookId ? { ...b, shelf } : b))
+    );
+    showToast('Shelf Updated', `Book moved to "${shelf}"`);
+  };
+
+  const handleUpdateBookProgress = (
+    bookId: string,
+    progressPercent: number,
+    bookmarks: Bookmark[],
+    rating?: number
+  ) => {
+    setBooks((prev) =>
+      prev.map((b) =>
+        b.id === bookId
+          ? {
+              ...b,
+              progressPercent,
+              bookmarks,
+              rating: rating !== undefined ? rating : b.rating,
+              lastReadTimestamp: Date.now(),
+            }
+          : b
+      )
+    );
+  };
+
+  const handleOpenBookInEditor = (book: Book) => {
+    setActiveMarkdown(book.content);
+    setActiveFilename(`${book.title}.md`);
+    setActivePdfDataUrl(undefined);
+    showToast('Loaded in Editor', `Opened "${book.title}" in workspace editor`);
+  };
+
+  const handleExportBookmarksToMarkdown = (markdownNotes: string) => {
+    setActiveMarkdown(markdownNotes);
+    setActiveFilename('Reading_Notes_Study_Guide.md');
+    setActivePdfDataUrl(undefined);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-blue-100 selection:text-blue-900">
       
@@ -440,11 +546,13 @@ export default function App() {
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
         onOpenCloudStorage={() => setIsCloudModalOpen(true)}
+        onOpenBookLibrary={() => setIsBookLibraryOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNewDocument={handleNewDocument}
         onLoadSample={() => handleConvertSample(SAMPLE_PDFS[0], options)}
         historyCount={history.length}
         versionCount={snapshots.length}
+        booksCount={books.length}
         hasActiveDoc={Boolean(activeMarkdown)}
         isConverting={isConverting}
       />
@@ -461,6 +569,7 @@ export default function App() {
             isRefining={isRefining}
             onShowToast={showToast}
             lastAutoSaveTime={lastAutoSaveTime}
+            onOpenBookLibrary={() => setIsBookLibraryOpen(true)}
           />
         ) : (
           <PdfUploader
@@ -474,6 +583,41 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Book Library Hub Modal */}
+      <BookLibraryModal
+        isOpen={isBookLibraryOpen}
+        onClose={() => setIsBookLibraryOpen(false)}
+        books={books}
+        onSelectBookToRead={(book) => {
+          setActiveReadingBook(book);
+          setIsBookLibraryOpen(false);
+        }}
+        onImportBook={handleImportBook}
+        onDeleteBook={handleDeleteBook}
+        onToggleFavorite={handleToggleFavoriteBook}
+        onUpdateBookShelf={handleUpdateBookShelf}
+        onOpenInEditor={(book) => {
+          handleOpenBookInEditor(book);
+          setIsBookLibraryOpen(false);
+        }}
+        onExportBookmarksToMarkdown={handleExportBookmarksToMarkdown}
+        onShowToast={showToast}
+      />
+
+      {/* Fullscreen / Paper Book Reader Modal */}
+      {activeReadingBook && (
+        <BookReaderModal
+          book={activeReadingBook}
+          onClose={() => setActiveReadingBook(null)}
+          onUpdateBookProgress={handleUpdateBookProgress}
+          onOpenInEditor={(book) => {
+            handleOpenBookInEditor(book);
+            setActiveReadingBook(null);
+          }}
+          onShowToast={showToast}
+        />
+      )}
 
       {/* History Drawer */}
       <HistoryDrawer

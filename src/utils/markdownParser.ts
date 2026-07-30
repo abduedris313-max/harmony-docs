@@ -84,6 +84,17 @@ export function renderMarkdownToHtml(markdownText: string): string {
       }
     });
 
+    // Assign IDs to headings for Table of Contents jump navigation
+    const headingEls = tempContainer.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    headingEls.forEach((hEl) => {
+      const text = hEl.textContent || '';
+      const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+      if (id) {
+        hEl.id = id;
+        hEl.setAttribute('data-heading-id', id);
+      }
+    });
+
     return tempContainer.innerHTML;
   } catch (err) {
     console.error('Markdown parsing error:', err);

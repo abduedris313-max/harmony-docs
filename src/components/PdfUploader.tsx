@@ -69,20 +69,20 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
       
       {/* Hero Welcome Header */}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center space-x-2 bg-slate-900 text-slate-200 border border-slate-700 rounded-full px-3.5 py-1 text-xs font-medium mb-3 shadow-xs">
-          <FileText className="w-3.5 h-3.5 text-blue-400" />
-          <span>Native PDF Engine (Fast &amp; Deterministic Layout Parser)</span>
+        <div className="inline-flex items-center space-x-2 bg-slate-900 text-slate-100 rounded-full px-3.5 py-1 text-xs font-medium mb-3 shadow-xs">
+          <FileText className="w-3.5 h-3.5 text-[#007AFF]" />
+          <span>iOS Document Parser &amp; Markdown Reader</span>
         </div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight">
+        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
           Convert PDF Documents to Clean Markdown
         </h2>
         <p className="mt-2 text-sm text-slate-600 max-w-xl mx-auto">
-          Extract structured headings, lists, tables, formulas, and code blocks using a standard PDF parsing engine. Edit live in an integrated split-editor and export formatted files.
+          Extract structured headings, lists, tables, formulas, and code blocks. View and edit in an authentic iOS Document Reader interface.
         </p>
       </div>
 
       {/* Primary Upload Dropzone Card */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-6 sm:p-8 transition-all">
+      <div className="bg-white border border-black/5 rounded-3xl shadow-sm overflow-hidden p-6 sm:p-8 transition-all">
         
         {/* Dropzone Area */}
         <div
@@ -90,12 +90,12 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => !isConverting && fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-8 sm:p-10 text-center cursor-pointer transition-all ${
+          className={`border-2 border-dashed rounded-2xl p-8 sm:p-10 text-center cursor-pointer transition-all ${
             isDragOver
-              ? 'border-blue-500 bg-blue-50/60 scale-[1.01]'
+              ? 'border-[#007AFF] bg-[#007AFF]/5 scale-[1.01]'
               : selectedFile
-              ? 'border-blue-500 bg-blue-50/30'
-              : 'border-slate-300 hover:border-blue-400 bg-slate-50/50 hover:bg-slate-50'
+              ? 'border-[#007AFF] bg-[#007AFF]/5'
+              : 'border-slate-200 hover:border-[#007AFF] bg-slate-50/50 hover:bg-slate-50'
           }`}
         >
           <input
@@ -108,17 +108,17 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
 
           {isConverting ? (
             <div className="py-6 flex flex-col items-center justify-center space-y-4">
-              <div className="w-14 h-14 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin flex items-center justify-center">
-                <FileText className="w-6 h-6 text-blue-600" />
+              <div className="w-14 h-14 rounded-full border-4 border-[#007AFF]/20 border-t-[#007AFF] animate-spin flex items-center justify-center">
+                <FileText className="w-6 h-6 text-[#007AFF]" />
               </div>
               <div>
                 <p className="text-base font-semibold text-slate-800">Converting PDF Document...</p>
-                <p className="text-xs text-blue-600 mt-1 animate-pulse">{conversionProgress || 'Analyzing page layout & formatting structure...'}</p>
+                <p className="text-xs text-[#007AFF] mt-1 animate-pulse">{conversionProgress || 'Analyzing page layout & formatting structure...'}</p>
               </div>
             </div>
           ) : selectedFile ? (
             <div className="py-2 flex flex-col items-center justify-center">
-              <div className="w-12 h-12 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-center justify-center mb-3 shadow-sm">
+              <div className="w-12 h-12 bg-[#007AFF]/10 text-[#007AFF] rounded-2xl flex items-center justify-center mb-3 shadow-xs">
                 <File className="w-6 h-6" />
               </div>
               <p className="text-sm font-semibold text-slate-800">{selectedFile.name}</p>
@@ -138,14 +138,14 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
             </div>
           ) : (
             <div className="py-4 flex flex-col items-center justify-center">
-              <div className="w-14 h-14 bg-white text-blue-600 border border-slate-200 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
+              <div className="w-14 h-14 bg-white text-[#007AFF] border border-slate-200/80 rounded-2xl flex items-center justify-center mb-4 shadow-xs">
                 <Upload className="w-7 h-7" />
               </div>
               <p className="text-sm sm:text-base font-medium text-slate-700">
-                <span className="text-blue-600 font-semibold">Click to upload</span> or drag and drop your PDF
+                <span className="text-[#007AFF] font-semibold">Tap to select PDF</span> or drag and drop
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                Supports academic papers, reports, invoices, manuals, and eBooks (PDF up to 50MB)
+                Supports academic papers, reports, invoices, manuals, and eBooks
               </p>
             </div>
           )}

@@ -19,6 +19,8 @@ import {
   AlignLeft,
   HelpCircle,
   Search,
+  FileText,
+  SpellCheck,
 } from 'lucide-react';
 
 interface MarkdownToolbarProps {
@@ -30,6 +32,10 @@ interface MarkdownToolbarProps {
   onOpenHelp?: () => void;
   onToggleSearch?: () => void;
   onOpenTableBuilder?: () => void;
+  editorTheme?: 'document' | 'code';
+  onChangeEditorTheme?: (theme: 'document' | 'code') => void;
+  onToggleSpellcheck?: () => void;
+  typosCount?: number;
 }
 
 export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
@@ -41,6 +47,10 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   onOpenHelp,
   onToggleSearch,
   onOpenTableBuilder,
+  editorTheme = 'code',
+  onChangeEditorTheme,
+  onToggleSpellcheck,
+  typosCount = 0,
 }) => {
   return (
     <div className="bg-white border-b border-slate-200 px-3 py-1.5 flex flex-wrap items-center justify-between gap-1 text-slate-600">
@@ -164,7 +174,40 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
       </div>
 
       {/* Utilities Group */}
-      <div className="flex items-center space-x-1">
+      <div className="flex items-center space-x-1.5">
+        
+        {/* Editor View Style Segmented Control */}
+        {onChangeEditorTheme && (
+          <div className="flex items-center p-0.5 bg-slate-100 rounded-full border border-slate-200/80 text-xs font-medium">
+            <button
+              onClick={() => onChangeEditorTheme('document')}
+              className={`px-2 py-0.5 rounded-full flex items-center space-x-1 transition-all ${
+                editorTheme === 'document'
+                  ? 'bg-white text-[#007AFF] shadow-2xs font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Document Mode: Paper-like proportional typography writing view"
+            >
+              <FileText className="w-3 h-3" />
+              <span className="hidden sm:inline text-[11px]">Document</span>
+            </button>
+            <button
+              onClick={() => onChangeEditorTheme('code')}
+              className={`px-2 py-0.5 rounded-full flex items-center space-x-1 transition-all ${
+                editorTheme === 'code'
+                  ? 'bg-white text-[#007AFF] shadow-2xs font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Code Mode: Raw monospaced Markdown code editor"
+            >
+              <Code className="w-3 h-3" />
+              <span className="hidden sm:inline text-[11px]">Code</span>
+            </button>
+          </div>
+        )}
+
+        <div className="w-px h-4 bg-slate-200/80 mx-0.5" />
+
         <button
           onClick={onCleanFormat}
           className="p-1.5 hover:bg-slate-100 hover:text-blue-600 rounded transition-colors text-xs flex items-center space-x-1 font-medium"
@@ -182,6 +225,22 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
           >
             <Search className="w-4 h-4 text-slate-600" />
             <span className="hidden sm:inline text-xs font-semibold text-slate-700">Find</span>
+          </button>
+        )}
+
+        {onToggleSpellcheck && (
+          <button
+            onClick={onToggleSpellcheck}
+            className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-blue-600 rounded transition-colors flex items-center space-x-1 relative"
+            title="Spellcheck & Typos Inspector"
+          >
+            <SpellCheck className="w-4 h-4 text-red-500" />
+            <span className="hidden sm:inline text-xs font-semibold text-slate-700">Spellcheck</span>
+            {typosCount > 0 && (
+              <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full min-w-[16px] text-center shadow-2xs">
+                {typosCount}
+              </span>
+            )}
           </button>
         )}
 

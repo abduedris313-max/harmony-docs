@@ -152,18 +152,21 @@ export const TableBuilderModal: React.FC<TableBuilderModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/30 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white/95 backdrop-blur-2xl border border-black/10 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
+        {/* iOS Top Sheet Drag Pill */}
+        <div className="w-10 h-1 rounded-full bg-slate-300 mx-auto mt-2.5 mb-1 shrink-0" />
+
         {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div className="p-4 sm:p-5 border-b border-black/5 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shadow-xs">
+            <div className="w-10 h-10 rounded-full bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center shadow-xs">
               <TableIcon className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                Markdown Table Builder GUI
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 tracking-tight">
+                Table Builder
               </h2>
               <p className="text-xs text-slate-500 font-medium">
                 Visually construct and format GitHub Flavored Markdown (GFM) tables
@@ -173,7 +176,7 @@ export const TableBuilderModal: React.FC<TableBuilderModalProps> = ({
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/60 transition-colors"
+            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
