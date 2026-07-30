@@ -1,0 +1,74 @@
+export interface ConversionOptions {
+  preserveLayout: boolean;
+  extractTables: boolean;
+  extractImagesDesc: boolean;
+  mathLatex: boolean;
+  cleanHeadersFooters: boolean;
+  pageRange: string;
+}
+
+export interface DocumentStats {
+  wordCount: number;
+  charCount: number;
+  lineCount: number;
+  readingTimeMinutes: number;
+}
+
+export interface HistoryItem {
+  id: string;
+  filename: string;
+  timestamp: number;
+  markdown: string;
+  fileSizeBytes: number;
+  wordCount: number;
+  pdfDataUrl?: string;
+}
+
+export type ViewMode = 'split' | 'editor' | 'preview' | 'compare';
+
+export type ExportFormat = 'md' | 'txt' | 'html' | 'pdf';
+
+export type AiAction = 'summarize' | 'grammar' | 'format_tables' | 'extract_action_items' | 'translate' | 'custom';
+
+export interface ToastMessage {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  title: string;
+  message?: string;
+}
+
+// Version History Snapshots
+export interface VersionSnapshot {
+  id: string;
+  label: string;
+  timestamp: number;
+  markdown: string;
+  wordCount: number;
+  charCount: number;
+  isAutoSave?: boolean;
+}
+
+// Cloud Storage Services (Google Drive & Dropbox)
+export type CloudProvider = 'google-drive' | 'dropbox';
+
+export interface CloudAccount {
+  provider: CloudProvider;
+  connected: boolean;
+  accountName?: string;
+  accountEmail?: string;
+  avatarUrl?: string;
+  usedStorageMb?: number;
+  totalStorageMb?: number;
+}
+
+export interface CloudFile {
+  id: string;
+  name: string;
+  provider: CloudProvider;
+  type: 'pdf' | 'md' | 'folder' | 'txt';
+  sizeBytes: number;
+  updatedAt: number;
+  path: string;
+  content?: string;
+  pdfDataUrl?: string;
+}

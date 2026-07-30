@@ -1,0 +1,6 @@
+{
+  "name": "PDF to Markdown Converter",
+  "description": "Convert PDF documents into formatted Markdown files with an integrated split-view editor, customizable conversion settings, AI refinement tools, and direct export options.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

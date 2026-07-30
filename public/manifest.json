@@ -1,0 +1,25 @@
+{
+  "short_name": "PDF2MD AI",
+  "name": "PDF to Markdown AI Pro",
+  "description": "Convert PDF documents to GitHub Flavored Markdown with AI structure recognition, syntax highlighting, cloud storage, and version history.",
+  "icons": [
+    {
+      "src": "/pwa-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["productivity", "utilities"]
+}
