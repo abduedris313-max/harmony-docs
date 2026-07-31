@@ -6,15 +6,15 @@
     <title>PDF to Markdown AI Pro</title>
 
     <!-- PWA Web Manifest & Metadata -->
-    <link id="manifest-link" rel="manifest" href="manifest.json" />
+    <link id="manifest-link" rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#2563eb" />
     <meta name="description" content="Convert PDF documents to GitHub Flavored Markdown with AI structure recognition, split-view editor, and export options." />
-    <link rel="apple-touch-icon" href="pwa-192.png" />
-    <link rel="icon" type="image/png" href="pwa-192.png" />
+    <link rel="apple-touch-icon" href="./pwa-192.png" />
+    <link rel="icon" type="image/png" href="./pwa-192.png" />
     <script>
       (function() {
         // Normalize subpath URLs on GitHub Pages (e.g. /harmony-docs to /harmony-docs/)
-        // so relative asset paths like 'manifest.json' and 'sw.js' resolve inside the repository folder.
+        // so relative asset paths resolve correctly inside subfolders.
         var path = window.location.pathname;
         if (path.length > 1 && !path.endsWith('/') && !path.includes('.')) {
           window.history.replaceState(null, '', path + '/' + window.location.search + window.location.hash);
@@ -24,7 +24,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="./src/main.tsx"></script>
 
     <!-- Register PWA Service Worker -->
     <script>
