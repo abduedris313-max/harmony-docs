@@ -108,5 +108,43 @@ export interface Book {
   cloudProvider?: CloudProvider;
   isFavorite?: boolean;
   bookmarks: Bookmark[];
+  folderId?: string; // Local folder organization
+  fileSizeBytes?: number;
+  localPath?: string;
+  pdfDataUrl?: string;
 }
+
+// Local Document Folder Organization
+export interface DocumentFolder {
+  id: string;
+  name: string;
+  color?: string;
+  icon?: string;
+  createdAt: number;
+  parentId?: string;
+}
+
+// Directory Scanner Item
+export interface DirectoryScanItem {
+  id: string;
+  name: string;
+  relativePath: string;
+  sizeBytes: number;
+  fileFormat: 'pdf' | 'md' | 'txt' | 'epub';
+  lastModified: number;
+  file?: File;
+  selected: boolean;
+  status: 'pending' | 'imported' | 'failed';
+}
+
+// Full Library Offline Backup & Restore Schema
+export interface LibraryBackup {
+  version: string;
+  exportedAt: number;
+  books: Book[];
+  folders: DocumentFolder[];
+  history: HistoryItem[];
+  snapshots: VersionSnapshot[];
+}
+
 
