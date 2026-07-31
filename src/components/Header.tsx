@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, History, Settings, Sparkles, RefreshCw, Cloud, Download, BookOpen } from 'lucide-react';
+import { FileText, History, Settings, Sparkles, RefreshCw, Cloud, Download, BookOpen, ChevronDown, Printer } from 'lucide-react';
+import { marked } from 'marked';
 
 interface HeaderProps {
   onOpenHistory: () => void;
@@ -14,6 +15,9 @@ interface HeaderProps {
   booksCount?: number;
   hasActiveDoc: boolean;
   isConverting: boolean;
+  activeMarkdown?: string;
+  activeFilename?: string;
+  onShowToast?: (title: string, message?: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,9 +33,85 @@ export const Header: React.FC<HeaderProps> = ({
   booksCount = 0,
   hasActiveDoc,
   isConverting,
+  activeMarkdown = '',
+  activeFilename = '',
+  onShowToast,
 }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
+  const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
+
+  // 1. Download Markdown (.md)
+  const handleDownloadMd = () => {
+    if (!activeMarkdown) return;
+    const baseName = activeFilename.replace(/\.[^/.]+$/, "") || "document";
+    const blob = new Blob([activeMarkdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${baseName}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    if (onShowToast) {
+      onShowToast("Exported to Local Drive", `${baseName}.md saved successfully`, "success");
+    }
+  };
+
+  // 2. Download/Print PDF Document (.pdf)
+  const handleDownloadPdf = async () => {
+    if (!activeMarkdown) return;
+    const baseName = activeFilename.replace(/\.[^/.]+$/, "") || "document";
+    const rawHtml = await marked.parse(activeMarkdown);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      if (onShowToast) {
+        onShowToast("Popup Blocked", "Please allow popups to open the PDF print dialog", "error");
+      }
+      return;
+    }
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>${baseName}</title>
+  <style>
+    @page { size: A4; margin: 20mm; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #111827;
+      margin: 0;
+      padding: 0;
+    }
+    h1, h2, h3 { color: #000; font-weight: 700; page-break-after: avoid; }
+    h1 { font-size: 24pt; border-bottom: 1.5pt solid #e5e7eb; padding-bottom: 8pt; margin-top: 0; }
+    h2 { font-size: 16pt; margin-top: 18pt; border-bottom: 0.5pt solid #f3f4f6; }
+    p, li { font-size: 10.5pt; }
+    table { width: 100%; border-collapse: collapse; margin: 12pt 0; page-break-inside: avoid; }
+    th, td { border: 1pt solid #d1d5db; padding: 6pt 8pt; font-size: 9.5pt; text-align: left; }
+    th { background-color: #f3f4f6; font-weight: 600; }
+    pre { background-color: #f8fafc; border: 1pt solid #e2e8f0; padding: 10pt; border-radius: 4pt; font-size: 9pt; white-space: pre-wrap; }
+    blockquote { border-left: 3pt solid #007AFF; margin: 10pt 0; padding-left: 10pt; color: #4b5563; }
+  </style>
+</head>
+<body>
+  ${rawHtml}
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 300);
+    };
+  </script>
+</body>
+</html>`);
+    printWindow.document.close();
+    if (onShowToast) {
+      onShowToast("Print / Save as PDF Opened", "Use 'Save as PDF' in the print dialog", "info");
+    }
+  };
 
   useEffect(() => {
     // Check if app is already running in standalone mode (installed)
@@ -147,6 +227,66 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </button>
+
+          {/* File Export Dropdown Button */}
+          {hasActiveDoc && (
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#007AFF] hover:bg-[#0062CC] rounded-full transition-all flex items-center space-x-1.5 shadow-xs"
+                title="Export current document as .md or .pdf"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showExportMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowExportMenu(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-black/10 py-1.5 z-50 animate-in fade-in zoom-in-95">
+                    <div className="px-3.5 py-1.5 border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                      Export Document
+                    </div>
+                    <button
+                      onClick={() => {
+                        handleDownloadMd();
+                        setShowExportMenu(false);
+                      }}
+                      className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-[#007AFF] flex items-center justify-between transition-colors"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <FileText className="w-4 h-4 text-[#007AFF]" />
+                        <span>Markdown (.md)</span>
+                      </div>
+                      <span className="text-[10px] bg-blue-100 text-[#007AFF] font-bold px-1.5 py-0.5 rounded font-mono">
+                        .md
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleDownloadPdf();
+                        setShowExportMenu(false);
+                      }}
+                      className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between transition-colors"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <Printer className="w-4 h-4 text-amber-600" />
+                        <span>PDF Document (.pdf)</span>
+                      </div>
+                      <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded font-mono">
+                        .pdf
+                      </span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {hasActiveDoc && (
             <button

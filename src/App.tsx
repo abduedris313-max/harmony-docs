@@ -555,6 +555,9 @@ export default function App() {
         booksCount={books.length}
         hasActiveDoc={Boolean(activeMarkdown)}
         isConverting={isConverting}
+        activeMarkdown={activeMarkdown}
+        activeFilename={activeFilename}
+        onShowToast={showToast}
       />
 
       {/* Main Body View */}
