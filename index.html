@@ -6,21 +6,11 @@
     <title>PDF to Markdown AI Pro</title>
 
     <!-- PWA Web Manifest & Metadata -->
-    <link id="manifest-link" rel="manifest" href="./manifest.json" />
+    <link id="manifest-link" rel="manifest" href="manifest.json" />
     <meta name="theme-color" content="#2563eb" />
     <meta name="description" content="Convert PDF documents to GitHub Flavored Markdown with AI structure recognition, split-view editor, and export options." />
-    <link rel="apple-touch-icon" href="./pwa-192.png" />
-    <link rel="icon" type="image/png" href="./pwa-192.png" />
-    <script>
-      (function() {
-        // Enforce trailing slash on subpath URLs (e.g. /harmony-docs to /harmony-docs/)
-        // so relative assets resolve cleanly against subfolder root.
-        var path = window.location.pathname;
-        if (path.length > 1 && !path.endsWith('/') && !path.includes('.')) {
-          window.location.replace(path + '/' + window.location.search + window.location.hash);
-        }
-      })();
-    </script>
+    <link rel="apple-touch-icon" href="pwa-192.png" />
+    <link rel="icon" type="image/png" href="pwa-192.png" />
   </head>
   <body>
     <div id="root"></div>
@@ -30,13 +20,10 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          var basePath = window.location.pathname;
-          if (!basePath.endsWith('/')) {
-            basePath += '/';
-          }
-          navigator.serviceWorker.register(basePath + 'sw.js', { scope: basePath })
-            .then((reg) => console.log('ServiceWorker registered with scope:', reg.scope))
-            .catch((err) => console.warn('ServiceWorker registration failed:', err));
+          var swUrl = new URL('sw.js', window.location.href).href;
+          navigator.serviceWorker.register(swUrl)
+            .then((reg) => console.log('ServiceWorker registered:', reg.scope))
+            .catch((err) => console.warn('ServiceWorker registration warning:', err));
         });
       }
     </script>
