@@ -21,6 +21,7 @@ import {
   Search,
   FileText,
   SpellCheck,
+  FileCheck2,
 } from 'lucide-react';
 
 interface MarkdownToolbarProps {
@@ -36,6 +37,8 @@ interface MarkdownToolbarProps {
   onChangeEditorTheme?: (theme: 'document' | 'code') => void;
   onToggleSpellcheck?: () => void;
   typosCount?: number;
+  onToggleLinter?: () => void;
+  syntaxIssuesCount?: number;
 }
 
 export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
@@ -51,6 +54,8 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   onChangeEditorTheme,
   onToggleSpellcheck,
   typosCount = 0,
+  onToggleLinter,
+  syntaxIssuesCount = 0,
 }) => {
   return (
     <div className="bg-white border-b border-slate-200 px-3 py-1.5 flex flex-wrap items-center justify-between gap-1 text-slate-600">
@@ -239,6 +244,22 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
             {typosCount > 0 && (
               <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full min-w-[16px] text-center shadow-2xs">
                 {typosCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        {onToggleLinter && (
+          <button
+            onClick={onToggleLinter}
+            className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-amber-600 rounded transition-colors flex items-center space-x-1 relative"
+            title="Markdown Syntax & Formatting Inspector"
+          >
+            <FileCheck2 className="w-4 h-4 text-amber-500" />
+            <span className="hidden sm:inline text-xs font-semibold text-slate-700">Syntax</span>
+            {syntaxIssuesCount > 0 && (
+              <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full min-w-[16px] text-center shadow-2xs">
+                {syntaxIssuesCount}
               </span>
             )}
           </button>

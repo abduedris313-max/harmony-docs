@@ -25,6 +25,8 @@ import { FloatingToolMenu } from './FloatingToolMenu';
 import { TableOfContentsPanel, HeadingItem } from './TableOfContentsPanel';
 import { SpellcheckPanel } from './SpellcheckPanel';
 import { detectTyposInMarkdown, TypoItem } from '../utils/spellchecker';
+import { MarkdownLinterPanel } from './MarkdownLinterPanel';
+import { lintMarkdownSyntax, fixAllMarkdownIssues, MarkdownIssue } from '../utils/markdownLinter';
 import { ViewMode, AiAction, DocumentStats } from '../types';
 import { renderMarkdownToHtml } from '../utils/markdownParser';
 
@@ -58,6 +60,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [showSearch, setShowSearch] = useState(false);
   const [showTableBuilder, setShowTableBuilder] = useState(false);
   const [showSpellcheck, setShowSpellcheck] = useState(false);
+  const [showLinterPanel, setShowLinterPanel] = useState(false);
 
   // Custom User Dictionary for Spellchecking
   const [userDictionary, setUserDictionary] = useState<Set<string>>(
@@ -202,6 +205,47 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       return next;
     });
     onShowToast('Added to Dictionary', `Word "${word}" will no longer be flagged as a typo`);
+  };
+
+  // Auto-Detect Markdown Syntax & Formatting Issues
+  const syntaxIssues = useMemo(() => {
+    return lintMarkdownSyntax(markdown);
+  }, [markdown]);
+
+  // Jump to and select syntax issue line in editor
+  const handleJumpToIssue = (issue: MarkdownIssue) => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(issue.startPos, issue.endPos);
+
+      const lineHeight = 20;
+      textareaRef.current.scrollTop = Math.max(0, issue.lineIndex * lineHeight - 60);
+    }
+  };
+
+  // Fix single syntax issue
+  const handleFixIssue = (issue: MarkdownIssue) => {
+    if (issue.autoFixable && issue.suggestedFix) {
+      if (issue.ruleId === 'unclosed-code-block') {
+        onChangeMarkdown(`${markdown.trimEnd()}\n\`\`\`\n`);
+      } else {
+        const lines = markdown.split('\n');
+        lines[issue.lineIndex] = issue.suggestedFix;
+        onChangeMarkdown(lines.join('\n'));
+      }
+      onShowToast('Formatting Issue Fixed', `Applied fix for line ${issue.lineIndex + 1}`);
+    }
+  };
+
+  // Fix all auto-fixable syntax issues
+  const handleFixAllIssues = () => {
+    const { newMarkdown, fixedCount } = fixAllMarkdownIssues(markdown);
+    if (fixedCount > 0) {
+      onChangeMarkdown(newMarkdown);
+      onShowToast('Auto-Fix Applied', `Fixed ${fixedCount} Markdown formatting issue${fixedCount === 1 ? '' : 's'}`);
+    } else {
+      onShowToast('No Fixable Issues', 'No auto-fixable syntax issues were detected', 'info');
+    }
   };
 
   // Handle Tab key in textarea for clean editing
@@ -474,6 +518,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         onChangeEditorTheme={setEditorTheme}
         onToggleSpellcheck={() => setShowSpellcheck(!showSpellcheck)}
         typosCount={typos.length}
+        onToggleLinter={() => setShowLinterPanel(!showLinterPanel)}
+        syntaxIssuesCount={syntaxIssues.length}
       />
 
       {/* Main Content View (Editor + Preview) */}
@@ -499,6 +545,17 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             onAddToDictionary={handleAddToDictionary}
             onJumpToTypo={handleJumpToTypo}
             onClose={() => setShowSpellcheck(false)}
+          />
+        )}
+
+        {/* Markdown Syntax & Formatting Inspector Drawer Panel */}
+        {showLinterPanel && (
+          <MarkdownLinterPanel
+            issues={syntaxIssues}
+            onFixIssue={handleFixIssue}
+            onFixAllIssues={handleFixAllIssues}
+            onJumpToIssue={handleJumpToIssue}
+            onClose={() => setShowLinterPanel(false)}
           />
         )}
 
@@ -631,6 +688,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         onChangeEditorTheme={setEditorTheme}
         onToggleSpellcheck={() => setShowSpellcheck(!showSpellcheck)}
         typosCount={typos.length}
+        onToggleLinter={() => setShowLinterPanel(!showLinterPanel)}
+        syntaxIssuesCount={syntaxIssues.length}
         onOpenBookLibrary={onOpenBookLibrary}
       />
 

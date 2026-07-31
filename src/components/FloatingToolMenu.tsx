@@ -13,6 +13,7 @@ import {
   FileText,
   Code,
   SpellCheck,
+  FileCheck2,
 } from 'lucide-react';
 
 interface FloatingToolMenuProps {
@@ -27,6 +28,8 @@ interface FloatingToolMenuProps {
   onChangeEditorTheme?: (theme: 'document' | 'code') => void;
   onToggleSpellcheck?: () => void;
   typosCount?: number;
+  onToggleLinter?: () => void;
+  syntaxIssuesCount?: number;
   onOpenBookLibrary?: () => void;
 }
 
@@ -42,6 +45,8 @@ export const FloatingToolMenu: React.FC<FloatingToolMenuProps> = ({
   onChangeEditorTheme,
   onToggleSpellcheck,
   typosCount = 0,
+  onToggleLinter,
+  syntaxIssuesCount = 0,
   onOpenBookLibrary,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -116,6 +121,31 @@ export const FloatingToolMenu: React.FC<FloatingToolMenuProps> = ({
                   )}
                 </div>
                 <div className="text-[10px] font-normal text-slate-400">Dictionary typo inspector</div>
+              </div>
+            </button>
+          )}
+
+          {onToggleLinter && (
+            <button
+              onClick={() => {
+                onToggleLinter();
+                setIsOpen(false);
+              }}
+              className="flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-all text-left relative"
+            >
+              <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                <FileCheck2 className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span>Syntax Inspector</span>
+                  {syntaxIssuesCount > 0 && (
+                    <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full">
+                      {syntaxIssuesCount}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] font-normal text-slate-400">Formatting &amp; structure errors</div>
               </div>
             </button>
           )}
