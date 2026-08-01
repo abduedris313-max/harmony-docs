@@ -40,6 +40,36 @@ export const ConversionSettingsModal: React.FC<ConversionSettingsModalProps> = (
         {/* Modal Body */}
         <div className="p-5 space-y-3.5">
           
+          {/* Language OCR & Script Hint */}
+          <div className="p-3 bg-slate-50 hover:bg-blue-50/30 rounded-xl border border-slate-200 transition-colors space-y-1.5">
+            <label htmlFor="languageHint" className="block text-xs font-bold text-slate-800 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-purple-600" />
+                Language OCR &amp; Script Hint
+              </span>
+              <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-semibold border border-purple-200">
+                Arabic &amp; Amharic Precision
+              </span>
+            </label>
+            <p className="text-[11px] text-slate-500 font-medium">
+              Hinting document language enhances OCR character recognition and script directionality (RTL/LTR) for Gemini AI and native parsers.
+            </p>
+            <select
+              id="languageHint"
+              value={options.languageHint || 'Auto'}
+              onChange={(e) => setOptions({ ...options, languageHint: e.target.value })}
+              className="w-full mt-1 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 shadow-sm"
+            >
+              <option value="Auto">Auto-Detect (Arabic, Amharic, Multilingual)</option>
+              <option value="Arabic">Arabic (العربية - Right to Left RTL)</option>
+              <option value="Amharic">Amharic (አማርኛ - Ethiopic Script)</option>
+              <option value="English">English</option>
+              <option value="French">French</option>
+              <option value="Spanish">Spanish</option>
+              <option value="German">German</option>
+            </select>
+          </div>
+
           {/* Option 1: Tables */}
           <div className="flex items-start space-x-3 p-3 bg-slate-50 hover:bg-blue-50/30 rounded-xl border border-slate-200 transition-colors">
             <input

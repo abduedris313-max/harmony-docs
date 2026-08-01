@@ -40,6 +40,7 @@ interface MarkdownEditorProps {
   onShowToast: (title: string, message?: string, type?: 'success' | 'error' | 'info') => void;
   lastAutoSaveTime?: number | null;
   onOpenBookLibrary?: () => void;
+  onOpenPdfEditor?: () => void;
 }
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
@@ -52,6 +53,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onShowToast,
   lastAutoSaveTime,
   onOpenBookLibrary,
+  onOpenPdfEditor,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [showAiToolbar, setShowAiToolbar] = useState(false);
@@ -73,6 +75,32 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   // iOS Reader Preferences State
   const [readerTheme, setReaderTheme] = useState<'paper' | 'sepia' | 'dark'>('paper');
   const [readerFontSize, setReaderFontSize] = useState<number>(15);
+
+  // Text Direction & Language Detection State
+  const [textDirection, setTextDirection] = useState<'auto' | 'rtl' | 'ltr'>('auto');
+
+  const autoDetectInfo = useMemo(() => {
+    if (!markdown) {
+      return { detectedLang: 'English / Standard', isRtl: false, autoIsRtl: false };
+    }
+    const arabicChars = (markdown.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g) || []).length;
+    const amharicChars = (markdown.match(/[\u1200-\u137F\u1380-\u139F\u2D80-\u2DDF\uAB00-\uAB2F]/g) || []).length;
+    const totalLetters = (markdown.match(/[\p{L}]/gu) || []).length || 1;
+
+    if (arabicChars > amharicChars && arabicChars > 5 && (arabicChars / totalLetters > 0.05 || arabicChars > 10)) {
+      return { detectedLang: 'Arabic (العربية)', isRtl: true, autoIsRtl: true };
+    }
+    if (amharicChars > arabicChars && amharicChars > 5 && (amharicChars / totalLetters > 0.05 || amharicChars > 10)) {
+      return { detectedLang: 'Amharic (አማርኛ)', isRtl: false, autoIsRtl: false };
+    }
+    return { detectedLang: 'English / Standard', isRtl: false, autoIsRtl: false };
+  }, [markdown]);
+
+  const computedDirection = useMemo(() => {
+    if (textDirection === 'rtl') return 'rtl';
+    if (textDirection === 'ltr') return 'ltr';
+    return autoDetectInfo.isRtl ? 'rtl' : 'ltr';
+  }, [textDirection, autoDetectInfo]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -520,6 +548,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         typosCount={typos.length}
         onToggleLinter={() => setShowLinterPanel(!showLinterPanel)}
         syntaxIssuesCount={syntaxIssues.length}
+        textDirection={textDirection}
+        onChangeTextDirection={setTextDirection}
+        detectedLangInfo={autoDetectInfo}
       />
 
       {/* Main Content View (Editor + Preview) */}
@@ -581,6 +612,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                   onChange={(e) => onChangeMarkdown(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Type or edit your document content..."
+                  dir={computedDirection}
                   className="w-full flex-1 bg-transparent text-slate-900 font-sans text-sm sm:text-base leading-relaxed resize-none focus:outline-none selection:bg-[#007AFF]/20 selection:text-[#007AFF]"
                   spellCheck={true}
                 />
@@ -592,6 +624,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 onChange={(e) => onChangeMarkdown(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Write or paste Markdown content here..."
+                dir={computedDirection}
                 className="w-full h-full bg-white text-slate-800 p-4 font-mono text-xs sm:text-sm leading-relaxed resize-none focus:outline-none selection:bg-blue-100 selection:text-blue-900"
                 spellCheck={false}
               />
@@ -622,6 +655,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               style={{ fontSize: `${readerFontSize}px` }}
             >
               <div
+                dir={computedDirection}
                 className={`prose max-w-none leading-relaxed transition-colors
                   ${
                     readerTheme === 'dark'
@@ -654,7 +688,18 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           <div className="h-full bg-slate-50 border-l border-slate-200 flex flex-col">
             <div className="bg-white px-3 py-1.5 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
               <span className="font-semibold text-slate-800">Original PDF View</span>
-              <span>Compare against Markdown</span>
+              <div className="flex items-center space-x-2">
+                {onOpenPdfEditor && (
+                  <button
+                    onClick={onOpenPdfEditor}
+                    className="px-2.5 py-1 rounded-full bg-[#007AFF] hover:bg-blue-600 text-white font-bold text-[10px] flex items-center space-x-1 shadow-2xs transition-all active:scale-95"
+                    title="Open in Visual PDF Editor to markup, split, merge, or rotate pages"
+                  >
+                    <span>Edit PDF</span>
+                  </button>
+                )}
+                <span>Compare against Markdown</span>
+              </div>
             </div>
             <iframe
               src={pdfDataUrl}

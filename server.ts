@@ -55,22 +55,30 @@ app.post("/api/convert-pdf", async (req, res) => {
       mathLatex = true,
       cleanHeadersFooters = true,
       pageRange = "All",
+      languageHint = "Auto",
     } = options;
 
     let markdown = "";
 
     if (engine === "gemini_ai" || engine === "ai") {
       // Optional AI conversion path
-      const systemPrompt = `You are an expert document parser and document layout compiler specializing in converting PDF documents into clean, elegant, and accurately structured Markdown format.
+      const systemPrompt = `You are an expert document parser and document layout compiler specializing in converting PDF documents into clean, elegant, and accurately structured Markdown format. You natively support all languages and scripts, with full fidelity for Arabic (RTL, right-to-left layout, cursive letter joining, diacritics), Amharic (Ethiopic/Ge'ez script), English, French, Spanish, German, Chinese, Japanese, and others.
       
+LANGUAGE OCR & SCRIPT HINT: ${
+        languageHint && languageHint !== "Auto"
+          ? `The document is hinted to be in ${languageHint}. Ensure 100% precision for ${languageHint} characters, letter joining, right-to-left flow for Arabic, and Ethiopic glyph preservation for Amharic.`
+          : "Automatically detect the primary language and script of the PDF (Arabic, Amharic, English, etc.). Preserve exact characters, Unicode normalization, and script directionality."
+      }
+
 Conversion Guidelines:
-1. Preserve structural hierarchy accurately using Markdown headers (#, ##, ###, ####).
-${extractTables ? "2. Extract and format tables into valid GitHub Flavored Markdown (GFM) tables using clean | pipes | and alignment dividers |---|." : "2. Convert table data into clear structured text lists."}
-${preserveLayout ? "3. Maintain list structures, bullet points, numbered lists, blockquotes, code blocks, and emphasis (bold, italic)." : "3. Simplify text formatting into standard paragraphs and headers."}
-${mathLatex ? "4. Represent mathematical formulas, LaTeX symbols, and equations clearly using $...$ or $$...$$." : "4. Represent formulas in clear plain text."}
-${extractImagesDesc ? "5. If figures, diagrams, charts, or images are present in the PDF, insert descriptive alt tags and captions, e.g. ![Diagram: Description of chart/figure]." : "5. Skip image details and focus on text."}
-${cleanHeadersFooters ? "6. Omit repetitive running headers, footers, page numbers, and page margin artifacts unless they are part of document content." : "6. Preserve all header/footer text as inline blocks."}
-7. Return ONLY the final converted Markdown text. Do NOT wrap the Markdown in an outer triple-backtick markdown code block unless the converted PDF itself is a code file.`;
+1. Preserve original text accuracy, Unicode characters, and language scripts without stripping, reversing, or corrupting non-ASCII characters. For Arabic, maintain proper letter joining and right-to-left text ordering.
+2. Preserve structural hierarchy accurately using Markdown headers (#, ##, ###, ####).
+${extractTables ? "3. Extract and format tables into valid GitHub Flavored Markdown (GFM) tables using clean | pipes | and alignment dividers |---|." : "3. Convert table data into clear structured text lists."}
+${preserveLayout ? "4. Maintain list structures, bullet points, numbered lists, blockquotes, code blocks, and emphasis (bold, italic)." : "4. Simplify text formatting into standard paragraphs and headers."}
+${mathLatex ? "5. Represent mathematical formulas, LaTeX symbols, and equations clearly using $...$ or $$...$$." : "5. Represent formulas in clear plain text."}
+${extractImagesDesc ? "6. If figures, diagrams, charts, or images are present in the PDF, insert descriptive alt tags and captions, e.g. ![Diagram: Description of chart/figure]." : "6. Skip image details and focus on text."}
+${cleanHeadersFooters ? "7. Omit repetitive running headers, footers, page numbers, and page margin artifacts unless they are part of document content." : "7. Preserve all header/footer text as inline blocks."}
+8. Return ONLY the final converted Markdown text. Do NOT wrap the Markdown in an outer triple-backtick markdown code block unless the converted PDF itself is a code file.`;
 
       const ai = getGeminiClient();
       const pdfPart = {
@@ -81,6 +89,7 @@ ${cleanHeadersFooters ? "6. Omit repetitive running headers, footers, page numbe
       };
       const textPart = {
         text: `Convert this PDF document into structured Markdown according to these requested options:
+- Primary Language Hint: ${languageHint}
 - Page Range: ${pageRange}
 - Format Tables: ${extractTables}
 - Preserve Structural Layout: ${preserveLayout}
@@ -116,6 +125,21 @@ Provide a complete, well-formatted, readable Markdown document representation of
       }
     }
 
+    // Detect language and direction from converted output
+    const arabicCount = (markdown.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g) || []).length;
+    const amharicCount = (markdown.match(/[\u1200-\u137F\u1380-\u139F\u2D80-\u2DDF\uAB00-\uAB2F]/g) || []).length;
+    
+    let detectedLanguage = "English / Standard";
+    let direction: "rtl" | "ltr" = "ltr";
+
+    if (arabicCount > 5) {
+      detectedLanguage = "Arabic (العربية)";
+      direction = "rtl";
+    } else if (amharicCount > 5) {
+      detectedLanguage = "Amharic (አማርኛ)";
+      direction = "ltr";
+    }
+
     // Calculate document statistics
     const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
     const charCount = markdown.length;
@@ -124,6 +148,8 @@ Provide a complete, well-formatted, readable Markdown document representation of
     res.json({
       success: true,
       markdown,
+      detectedLanguage,
+      direction,
       engine: engine === "gemini_ai" || engine === "ai" ? "Gemini AI Engine" : "Native PDF Engine",
       stats: {
         wordCount,

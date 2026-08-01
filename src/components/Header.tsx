@@ -19,7 +19,8 @@ import {
   Wifi,
   WifiOff,
   FolderSearch,
-  HardDrive
+  HardDrive,
+  Edit3
 } from 'lucide-react';
 import { marked } from 'marked';
 
@@ -41,8 +42,8 @@ interface HeaderProps {
   isOnline?: boolean;
   activeMarkdown?: string;
   activeFilename?: string;
-  currentView?: 'library' | 'editor' | 'uploader';
-  onNavigateView?: (view: 'library' | 'editor' | 'uploader') => void;
+  currentView?: 'library' | 'editor' | 'uploader' | 'pdf-editor';
+  onNavigateView?: (view: 'library' | 'editor' | 'uploader' | 'pdf-editor') => void;
   onShowToast?: (title: string, message?: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -217,7 +218,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-full flex items-center justify-between gap-2">
         {/* Brand Logo & iOS Back Navigation */}
         <div className="flex items-center space-x-2.5 min-w-0">
-          {onNavigateView && (currentView === 'editor' || currentView === 'uploader') ? (
+          {onNavigateView && (currentView === 'editor' || currentView === 'uploader' || currentView === 'pdf-editor') ? (
             <button
               onClick={() => onNavigateView('library')}
               className="px-3 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 text-[#007AFF] font-bold text-xs flex items-center space-x-1 border border-blue-100 transition-all active:scale-95 shrink-0"
@@ -235,7 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="min-w-0">
             <div className="flex items-center space-x-1.5 min-w-0">
               <h1 className="font-bold text-sm sm:text-base tracking-tight text-slate-900 truncate">
-                {currentView === 'library' ? 'Library' : 'PDF to MD'}
+                {currentView === 'library' ? 'Library' : currentView === 'pdf-editor' ? 'PDF Editor' : 'PDF to MD'}
               </h1>
               {hasActiveDoc && activeFilename && currentView === 'editor' ? (
                 <span className="hidden sm:inline-block text-[11px] text-slate-500 font-medium truncate max-w-[140px] md:max-w-[200px] bg-slate-100 px-2 py-0.5 rounded-full">
@@ -243,7 +244,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               ) : (
                 <span className="text-[11px] text-slate-400 font-medium hidden xs:inline">
-                  {currentView === 'library' ? '/ iOS Reader' : '/ Editor'}
+                  {currentView === 'library' ? '/ iOS Reader' : currentView === 'pdf-editor' ? '/ Canvas Editor' : '/ Editor'}
                 </span>
               )}
             </div>
@@ -286,6 +287,22 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <HardDrive className="w-3.5 h-3.5 text-slate-700" />
               <span>Local Storage</span>
+            </button>
+          )}
+
+          {/* PDF Editor Button */}
+          {onNavigateView && (
+            <button
+              onClick={() => onNavigateView('pdf-editor')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all flex items-center space-x-1.5 border shadow-3xs ${
+                currentView === 'pdf-editor'
+                  ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs'
+              }`}
+              title="Interactive Visual PDF Canvas Editor"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>PDF Editor</span>
             </button>
           )}
 
@@ -564,6 +581,22 @@ export const Header: React.FC<HeaderProps> = ({
             )}
 
             {/* Quick Actions Grid */}
+            {onNavigateView && (
+              <button
+                onClick={() => {
+                  onNavigateView('pdf-editor');
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full p-3 mb-2 rounded-2xl bg-blue-600 text-white flex items-center justify-between hover:bg-blue-700 transition-all shadow-xs"
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Edit3 className="w-4 h-4 text-amber-300 animate-pulse" />
+                  <span className="text-xs font-extrabold">PDF Visual Editor</span>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-white/80" />
+              </button>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
               {onOpenBookLibrary && (
                 <button

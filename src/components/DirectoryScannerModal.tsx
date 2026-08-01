@@ -57,7 +57,15 @@ export const DirectoryScannerModal: React.FC<DirectoryScannerModalProps> = ({
         setScanSourceInfo('No matching documents (.pdf, .md, .txt, .epub) found in folder.');
       }
     } catch (err: any) {
-      console.warn('Native directory picker failed:', err);
+      if (err.name === 'AbortError') {
+        setScanSourceInfo('');
+      } else {
+        console.info('Native directory picker restricted or unsupported in this iframe environment. Triggering folder picker fallback.');
+        setScanSourceInfo('Opening folder picker...');
+        setTimeout(() => {
+          fileInputRef.current?.click();
+        }, 50);
+      }
     } finally {
       setIsScanning(false);
     }

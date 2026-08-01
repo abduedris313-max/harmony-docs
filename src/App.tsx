@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { PdfUploader } from './components/PdfUploader';
 import { MarkdownEditor } from './components/MarkdownEditor';
+import { PdfEditorView } from './components/PdfEditorView';
 import { DocumentLibraryView } from './components/DocumentLibraryView';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { VersionHistoryDrawer } from './components/VersionHistoryDrawer';
@@ -17,7 +18,7 @@ import { SAMPLE_PDFS, SamplePdf } from './data/samplePdfs';
 import { INITIAL_BOOKS } from './data/sampleBooks';
 import { extractTextFromPdfArrayBuffer } from './utils/browserPdfParser';
 import { registerServiceWorker, subscribeToOnlineStatus } from './utils/offlineManager';
-import { saveToOfflineStore, removeFromOfflineStore } from './utils/indexedDBStorage';
+import { saveToOfflineStore, getAllFromOfflineStore, removeFromOfflineStore } from './utils/indexedDBStorage';
 
 const STORAGE_KEY = 'pdf_to_md_history_v1';
 const SNAPSHOTS_KEY = 'pdf_to_md_snapshots_v1';
@@ -32,7 +33,7 @@ const INITIAL_FOLDERS: DocumentFolder[] = [
 ];
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'library' | 'editor' | 'uploader'>('library');
+  const [currentView, setCurrentView] = useState<'library' | 'editor' | 'uploader' | 'pdf-editor'>('library');
   const [activeMarkdown, setActiveMarkdown] = useState<string>('');
   const [activeFilename, setActiveFilename] = useState<string>('');
   const [activePdfDataUrl, setActivePdfDataUrl] = useState<string | undefined>(undefined);
@@ -91,6 +92,24 @@ export default function App() {
       console.warn('Failed to save books to localStorage:', e);
     }
   }, [books]);
+
+  // Load documents from IndexedDB offline store on initial mount
+  useEffect(() => {
+    getAllFromOfflineStore<Book>('books').then((offlineBooks) => {
+      if (offlineBooks && offlineBooks.length > 0) {
+        setBooks((prev) => {
+          const existingIds = new Set(prev.map((b) => b.id));
+          const toAdd = offlineBooks.filter((b) => !existingIds.has(b.id));
+          if (toAdd.length > 0) {
+            return [...toAdd, ...prev];
+          }
+          return prev;
+        });
+      }
+    }).catch((err) => {
+      console.warn('IndexedDB initial load warning:', err);
+    });
+  }, []);
 
   // Restore auto-saved draft on initial mount if available
   useEffect(() => {
@@ -271,7 +290,7 @@ export default function App() {
 
       // 3. Fallback to client-side PDF parser if API route was unreached or returned error/502
       if (!markdown) {
-        markdown = extractTextFromPdfArrayBuffer(arrayBuffer, file.name);
+        markdown = await extractTextFromPdfArrayBuffer(arrayBuffer, file.name, opts);
         conversionMethod = 'Client Fallback Parser';
       }
 
@@ -313,6 +332,23 @@ export default function App() {
     } finally {
       setIsConverting(false);
       setConversionProgress('');
+    }
+  };
+
+  // Convert Edited PDF Bytes
+  const handleConvertPdfBytes = async (bytes: Uint8Array, name: string) => {
+    setIsConverting(true);
+    setConversionError(null);
+    setConversionProgress('Reading edited PDF...');
+
+    try {
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const file = new File([blob], name, { type: 'application/pdf' });
+      await handleConvertPdf(file, options);
+    } catch (err: any) {
+      console.error('Conversion of edited PDF failed:', err);
+      showToast('Conversion Failed', err.message || 'Error processing edited PDF', 'error');
+      setIsConverting(false);
     }
   };
 
@@ -642,7 +678,7 @@ export default function App() {
         try {
           if (item.fileFormat === 'pdf') {
             const buffer = await item.file.arrayBuffer();
-            content = extractTextFromPdfArrayBuffer(buffer, item.name);
+            content = await extractTextFromPdfArrayBuffer(buffer, item.name, options);
           } else {
             content = await item.file.text();
           }
@@ -836,6 +872,7 @@ export default function App() {
             onShowToast={showToast}
             lastAutoSaveTime={lastAutoSaveTime}
             onOpenBookLibrary={() => setCurrentView('library')}
+            onOpenPdfEditor={() => setCurrentView('pdf-editor')}
           />
         )}
 
@@ -848,6 +885,16 @@ export default function App() {
             error={conversionError}
             options={options}
             setOptions={setOptions}
+          />
+        )}
+
+        {currentView === 'pdf-editor' && (
+          <PdfEditorView
+            onConvertEditedPdf={handleConvertPdfBytes}
+            onShowToast={showToast}
+            initialFilename={activeFilename && activeFilename.endsWith('.pdf') ? activeFilename : 'edited_document.pdf'}
+            activePdfUrl={activePdfDataUrl}
+            onNavigateToLibrary={() => setCurrentView('library')}
           />
         )}
       </main>

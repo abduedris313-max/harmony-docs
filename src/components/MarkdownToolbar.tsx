@@ -22,6 +22,7 @@ import {
   FileText,
   SpellCheck,
   FileCheck2,
+  Languages,
 } from 'lucide-react';
 
 interface MarkdownToolbarProps {
@@ -39,6 +40,9 @@ interface MarkdownToolbarProps {
   typosCount?: number;
   onToggleLinter?: () => void;
   syntaxIssuesCount?: number;
+  textDirection?: 'auto' | 'rtl' | 'ltr';
+  onChangeTextDirection?: (dir: 'auto' | 'rtl' | 'ltr') => void;
+  detectedLangInfo?: { isRtl: boolean; detectedLang: string; autoIsRtl: boolean };
 }
 
 export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
@@ -56,6 +60,9 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   typosCount = 0,
   onToggleLinter,
   syntaxIssuesCount = 0,
+  textDirection = 'auto',
+  onChangeTextDirection,
+  detectedLangInfo,
 }) => {
   return (
     <div className="bg-white border-b border-slate-200 px-3 py-1.5 flex flex-wrap items-center justify-between gap-1 text-slate-600">
@@ -209,6 +216,60 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
               <span className="hidden sm:inline text-[11px]">Code</span>
             </button>
           </div>
+        )}
+
+        {onChangeTextDirection && (
+          <>
+            <div className="w-px h-4 bg-slate-200/80 mx-0.5" />
+            <div className="flex items-center p-0.5 bg-slate-100 rounded-full border border-slate-200/80 text-xs font-medium">
+              <button
+                onClick={() => onChangeTextDirection('auto')}
+                className={`px-1.5 py-0.5 rounded-full flex items-center transition-all ${
+                  textDirection === 'auto'
+                    ? 'bg-white text-[#007AFF] shadow-2xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Auto-detect text direction based on content"
+              >
+                <span className="text-[10px]">Auto</span>
+              </button>
+              <button
+                onClick={() => onChangeTextDirection('ltr')}
+                className={`px-1.5 py-0.5 rounded-full flex items-center transition-all ${
+                  textDirection === 'ltr'
+                    ? 'bg-white text-[#007AFF] shadow-2xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Force Left-to-Right layout"
+              >
+                <span className="text-[10px]">LTR</span>
+              </button>
+              <button
+                onClick={() => onChangeTextDirection('rtl')}
+                className={`px-1.5 py-0.5 rounded-full flex items-center transition-all ${
+                  textDirection === 'rtl'
+                    ? 'bg-white text-[#007AFF] shadow-2xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Force Right-to-Left layout"
+              >
+                <span className="text-[10px]">RTL</span>
+              </button>
+            </div>
+          </>
+        )}
+
+        {detectedLangInfo && (
+          <>
+            <div className="w-px h-4 bg-slate-200/80 mx-0.5" />
+            <div className="hidden md:flex items-center space-x-1 px-2 py-0.5 bg-purple-50 border border-purple-200 text-purple-700 rounded-full text-[10px] font-bold" title={`Detected language: ${detectedLangInfo.detectedLang}`}>
+              <Languages className="w-3 h-3 text-purple-600" />
+              <span className="whitespace-nowrap">
+                {detectedLangInfo.detectedLang || "English"} 
+                ({detectedLangInfo.isRtl ? "RTL" : "LTR"})
+              </span>
+            </div>
+          </>
         )}
 
         <div className="w-px h-4 bg-slate-200/80 mx-0.5" />

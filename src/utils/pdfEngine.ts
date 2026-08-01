@@ -1,5 +1,3 @@
-import { PDFParse } from 'pdf-parse';
-
 export interface PdfEngineOptions {
   preserveLayout?: boolean;
   extractTables?: boolean;
@@ -8,278 +6,353 @@ export interface PdfEngineOptions {
   mathLatex?: boolean;
 }
 
-interface PageData {
-  pageIndex: number;
-  lines: string[];
+let pdfjsLibPromise: Promise<any> | null = null;
+
+async function getPdfJs() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import('pdfjs-dist/legacy/build/pdf.mjs');
+  }
+  return pdfjsLibPromise;
+}
+
+interface PdfItem {
+  str: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  fontName: string;
+  width: number;
+}
+
+interface PdfLine {
+  y: number;
+  x: number;
+  maxFontSize: number;
+  isBold: boolean;
+  text: string;
+  items: PdfItem[];
 }
 
 export async function parsePdfToMarkdown(pdfBuffer: Buffer, options: PdfEngineOptions = {}): Promise<string> {
   const {
-    preserveLayout = true,
     extractTables = true,
     cleanHeadersFooters = true,
     pageRange = 'All',
   } = options;
 
-  const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
-  const textResult = await parser.getText();
-  
-  const pages: PageData[] = [];
+  try {
+    const pdfjs = await getPdfJs();
+    const uint8Array = new Uint8Array(pdfBuffer);
+    const pdfjsVersion = pdfjs.version || '4.0.379';
+    const cMapUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/cmaps/`;
+    const standardFontDataUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/standard_fonts/`;
 
-  if (textResult && textResult.pages && textResult.pages.length > 0) {
-    textResult.pages.forEach((p, idx) => {
-      const rawLines = (p.text || '').split(/\r?\n/).map(l => l.trimEnd());
-      pages.push({
-        pageIndex: p.num || idx + 1,
-        lines: rawLines,
-      });
+    const loadingTask = pdfjs.getDocument({
+      data: uint8Array,
+      cMapUrl,
+      cMapPacked: true,
+      standardFontDataUrl,
+      useSystemFonts: true,
+      disableFontFace: true,
     });
-  } else if (textResult && textResult.text) {
-    const rawLines = textResult.text.split(/\r?\n/).map(l => l.trimEnd());
-    pages.push({ pageIndex: 1, lines: rawLines });
-  }
 
-  await parser.destroy();
+    const pdfDoc = await loadingTask.promise;
+    const numPages = pdfDoc.numPages;
 
-  // Filter page range if specified (e.g. "1-3" or "2")
-  let targetPages = pages;
-  if (pageRange && pageRange.toLowerCase() !== 'all') {
-    const rangeMatch = pageRange.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
-    if (rangeMatch) {
-      const start = parseInt(rangeMatch[1], 10);
-      const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : start;
-      targetPages = pages.filter(p => p.pageIndex >= start && p.pageIndex <= end);
+    let startPage = 1;
+    let endPage = numPages;
+
+    if (pageRange && pageRange.toLowerCase() !== 'all') {
+      const rangeMatch = pageRange.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+      if (rangeMatch) {
+        startPage = parseInt(rangeMatch[1], 10);
+        endPage = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : startPage;
+      }
     }
+
+    const pagesMd: string[] = [];
+
+    for (let pageNum = startPage; pageNum <= Math.min(endPage, numPages); pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+
+      const items: PdfItem[] = textContent.items
+        .map((item: any) => {
+          const transform = item.transform || [1, 0, 0, 1, 0, 0];
+          const x = transform[4] || 0;
+          const y = transform[5] || 0;
+          const fontSize = Math.abs(transform[0]) || Math.abs(transform[3]) || item.height || 10;
+          const fontName = item.fontName || '';
+          const rawStr = item.str || '';
+          const cleanedStr = normalizeArabicAndEthiopicText(rawStr);
+          const width = item.width || (cleanedStr ? cleanedStr.length * (fontSize * 0.5) : 0);
+
+          return {
+            str: cleanedStr,
+            x,
+            y,
+            fontSize,
+            fontName,
+            width,
+          };
+        })
+        .filter((item) => item.str && item.str.trim().length > 0);
+
+      if (items.length === 0) {
+        pagesMd.push(
+          `<!-- Page ${pageNum} -->\n*Page ${pageNum}: Scanned image page. Select **Gemini AI Engine** to perform vision OCR.*`
+        );
+        continue;
+      }
+
+      // Sort items top-to-bottom
+      items.sort((a, b) => b.y - a.y);
+
+      const lines: PdfLine[] = [];
+      let currentLineItems: PdfItem[] = [];
+      let currentY: number | null = null;
+
+      for (const item of items) {
+        if (currentY === null || Math.abs(currentY - item.y) > Math.max(3.5, item.fontSize * 0.35)) {
+          if (currentLineItems.length > 0) {
+            lines.push(buildLineObject(currentLineItems));
+          }
+          currentLineItems = [item];
+          currentY = item.y;
+        } else {
+          currentLineItems.push(item);
+        }
+      }
+      if (currentLineItems.length > 0) {
+        lines.push(buildLineObject(currentLineItems));
+      }
+
+      const pageMarkdown = convertPdfLinesToMarkdown(lines, pageNum, numPages, extractTables);
+      pagesMd.push(pageMarkdown);
+    }
+
+    return pagesMd.join('\n\n---\n\n');
+  } catch (err) {
+    console.error('Error parsing PDF in Node.js engine:', err);
+    throw err;
   }
+}
 
-  // Optional: Detect and strip repeated running headers and footers across pages
-  if (cleanHeadersFooters && targetPages.length > 1) {
-    cleanRepeatedHeadersFooters(targetPages);
-  }
+const ARABIC_PRESENTATION_MAP: Record<string, string> = {
+  '\uFE80': 'ء', '\uFE81': 'آ', '\uFE82': 'آ', '\uFE83': 'أ', '\uFE84': 'أ',
+  '\uFE85': 'ؤ', '\uFE86': 'ؤ', '\uFE87': 'إ', '\uFE88': 'إ', '\uFE89': 'ئ',
+  '\uFE8A': 'ئ', '\uFE8B': 'ئ', '\uFE8C': 'ئ', '\uFE8D': 'ا', '\uFE8E': 'ا',
+  '\uFE8F': 'ب', '\uFE90': 'ب', '\uFE91': 'ب', '\uFE92': 'ب', '\uFE93': 'ة',
+  '\uFE94': 'ة', '\uFE95': 'ت', '\uFE96': 'ت', '\uFE97': 'ت', '\uFE98': 'ت',
+  '\uFE99': 'ث', '\uFE9A': 'ث', '\uFE9B': 'ث', '\uFE9C': 'ث', '\uFE9D': 'ج',
+  '\uFE9E': 'ج', '\uFE9F': 'ج', '\uFEA0': 'ج', '\uFEA1': 'ح', '\uFEA2': 'ح',
+  '\uFEA3': 'ح', '\uFEA4': 'ح', '\uFEA5': 'خ', '\uFEA6': 'خ', '\uFEA7': 'خ',
+  '\uFEA8': 'خ', '\uFEA9': 'د', '\uFEAA': 'د', '\uFEAB': 'ذ', '\uFEAC': 'ذ',
+  '\uFEAD': 'ر', '\uFEAE': 'ر', '\uFEAF': 'ز', '\uFEB0': 'ز', '\uFEB1': 'س',
+  '\uFEB2': 'س', '\uFEB3': 'س', '\uFEB4': 'س', '\uFEB5': 'ش', '\uFEB6': 'ش',
+  '\uFEB7': 'ش', '\uFEB8': 'ش', '\uFEB9': 'ص', '\uFEBA': 'ص', '\uFEBB': 'ص',
+  '\uFEBC': 'ص', '\uFEBD': 'ض', '\uFEBE': 'ض', '\uFEBF': 'ض', '\uFEC0': 'ض',
+  '\uFEC1': 'ط', '\uFEC2': 'ط', '\uFEC3': 'ط', '\uFEC4': 'ط', '\uFEC5': 'ظ',
+  '\uFEC6': 'ظ', '\uFEC7': 'ظ', '\uFEC8': 'ظ', '\uFEC9': 'ع', '\uFECA': 'ع',
+  '\uFECB': 'ع', '\uFECC': 'ع', '\uFECD': 'غ', '\uFECE': 'غ', '\uFECF': 'غ',
+  '\uFED0': 'غ', '\uFED1': 'ف', '\uFED2': 'ف', '\uFED3': 'ف', '\uFED4': 'ف',
+  '\uFED5': 'ق', '\uFED6': 'ق', '\uFED7': 'ق', '\uFED8': 'ق', '\uFED9': 'ك',
+  '\uFEDA': 'ك', '\uFEDB': 'ك', '\uFEDC': 'ك', '\uFEDD': 'ل', '\uFEDE': 'ل',
+  '\uFEDF': 'ل', '\uFEE0': 'ل', '\uFEE1': 'م', '\uFEE2': 'م', '\uFEE3': 'م',
+  '\uFEE4': 'م', '\uFEE5': 'ن', '\uFEE6': 'ن', '\uFEE7': 'ن', '\uFEE8': 'ن',
+  '\uFEE9': 'ه', '\uFEEA': 'ه', '\uFEEB': 'ه', '\uFEEC': 'ه', '\uFEED': 'و',
+  '\uFEEE': 'و', '\uFEEF': 'ى', '\uFEF0': 'ى', '\uFEF1': 'ي', '\uFEF2': 'ي',
+  '\uFEF3': 'ي', '\uFEF4': 'ي', '\uFEF5': 'لأ', '\uFEF6': 'لأ', '\uFEF7': 'لإ',
+  '\uFEF8': 'لإ', '\uFEF9': 'لآ', '\uFEFA': 'لآ', '\uFEFB': 'لا', '\uFEFC': 'لا'
+};
 
-  // Convert each page's lines into Markdown structure
-  const markdownPages: string[] = [];
+function normalizeArabicAndEthiopicText(str: string): string {
+  if (!str) return '';
+  return str.replace(/[\uFB50-\uFDFF\uFE70-\uFEFF]/g, (ch) => ARABIC_PRESENTATION_MAP[ch] || ch);
+}
 
-  for (let i = 0; i < targetPages.length; i++) {
-    const page = targetPages[i];
-    const pageMd = convertLinesToMarkdown(page.lines, { preserveLayout, extractTables });
-    
-    if (targetPages.length > 1) {
-      markdownPages.push(`<!-- Page ${page.pageIndex} -->\n${pageMd}`);
+function buildLineObject(items: PdfItem[]): PdfLine {
+  const hasArabic = items.some((it) => /[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(it.str));
+
+  if (hasArabic) {
+    const isXDescending = items.length > 1 && items[0].x > items[items.length - 1].x;
+    if (isXDescending) {
+      items.sort((a, b) => b.x - a.x);
     } else {
-      markdownPages.push(pageMd);
+      items.sort((a, b) => a.x - b.x);
     }
+  } else {
+    items.sort((a, b) => a.x - b.x);
   }
 
-  return markdownPages.join('\n\n---\n\n');
-}
+  let text = '';
+  let maxFontSize = 0;
+  let isBold = false;
 
-/**
- * Strips repeated top and bottom lines across multiple pages (e.g., page numbers, running headers)
- */
-function cleanRepeatedHeadersFooters(pages: PageData[]) {
-  if (pages.length < 2) return;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.fontSize > maxFontSize) maxFontSize = it.fontSize;
+    if (/bold|black|heavy|700|800|900/i.test(it.fontName)) isBold = true;
 
-  const topLinesMap = new Map<string, number>();
-  const bottomLinesMap = new Map<string, number>();
-
-  for (const page of pages) {
-    if (page.lines.length > 0) {
-      const top = page.lines[0].trim();
-      if (top) topLinesMap.set(top, (topLinesMap.get(top) || 0) + 1);
-    }
-    if (page.lines.length > 1) {
-      const bottom = page.lines[page.lines.length - 1].trim();
-      if (bottom) bottomLinesMap.set(bottom, (bottomLinesMap.get(bottom) || 0) + 1);
-    }
-  }
-
-  const threshold = Math.ceil(pages.length * 0.5); // repeated on >50% pages
-
-  for (const page of pages) {
-    if (page.lines.length > 0) {
-      const top = page.lines[0].trim();
-      if (topLinesMap.get(top)! >= threshold || /^page\s+\d+(\s+of\s+\d+)?$/i.test(top)) {
-        page.lines.shift();
+    if (i > 0) {
+      const prev = items[i - 1];
+      const gap = Math.abs(it.x - (prev.x + prev.width));
+      if (gap > 2) {
+        text += ' ';
       }
     }
-    if (page.lines.length > 0) {
-      const bottom = page.lines[page.lines.length - 1].trim();
-      if (bottomLinesMap.get(bottom)! >= threshold || /^page\s+\d+(\s+of\s+\d+)?$/i.test(bottom) || /^\d+$/i.test(bottom)) {
-        page.lines.pop();
-      }
-    }
+    text += it.str;
   }
+
+  return {
+    y: items[0].y,
+    x: items[0].x,
+    maxFontSize,
+    isBold,
+    text: text.trim(),
+    items,
+  };
 }
 
-/**
- * Parses lines of text into structured Markdown elements (Headings, Lists, Tables, Code, Paragraphs)
- */
-function convertLinesToMarkdown(lines: string[], opts: { preserveLayout: boolean; extractTables: boolean }): string {
-  const result: string[] = [];
+function convertPdfLinesToMarkdown(
+  lines: PdfLine[],
+  pageNum: number,
+  totalPages: number,
+  extractTables: boolean
+): string {
+  if (lines.length === 0) return '';
+
+  const fontCounts: Record<number, number> = {};
+  lines.forEach((l) => {
+    const sz = Math.round(l.maxFontSize);
+    if (sz > 0) {
+      fontCounts[sz] = (fontCounts[sz] || 0) + 1;
+    }
+  });
+
+  let modalSize = 12;
+  let maxCount = 0;
+  Object.keys(fontCounts).forEach((szStr) => {
+    const sz = parseFloat(szStr);
+    if (fontCounts[sz] > maxCount) {
+      maxCount = fontCounts[sz];
+      modalSize = sz;
+    }
+  });
+
+  const mdBlocks: string[] = [];
   let i = 0;
 
   while (i < lines.length) {
     const line = lines[i];
-    const trimmed = line.trim();
+    const txt = line.text;
 
-    if (!trimmed) {
-      result.push('');
+    if (!txt) {
       i++;
       continue;
     }
 
-    // Check for Table (lines containing 2 or more multi-space gaps, tabs, or pipe characters)
-    if (opts.extractTables && isTableCandidate(lines, i)) {
-      const { tableMd, nextIndex } = parseTableBlock(lines, i);
-      result.push(tableMd);
+    // Table detection
+    if (extractTables && isTableLine(line) && i + 1 < lines.length && isTableLine(lines[i + 1])) {
+      const { tableMd, nextIndex } = parseTableFromLines(lines, i);
+      mdBlocks.push(tableMd);
       i = nextIndex;
       continue;
     }
 
-    // Check for Bullet or Numbered Lists
-    const listMatch = trimmed.match(/^(?:[•⁃–*\-o]\s+|\d+[\.\)]\s+|[a-zA-Z][\.\)]\s+)(.+)$/);
+    // Headings
+    if (line.maxFontSize >= modalSize * 1.4) {
+      const cleanH1 = txt.replace(/^#+\s*/, '');
+      mdBlocks.push(`# ${cleanH1}`);
+      i++;
+      continue;
+    }
+
+    if (line.maxFontSize >= modalSize * 1.2 || (line.isBold && txt.length < 80 && !txt.endsWith('.'))) {
+      const cleanH2 = txt.replace(/^#+\s*/, '');
+      mdBlocks.push(`## ${cleanH2}`);
+      i++;
+      continue;
+    }
+
+    if (line.maxFontSize >= modalSize * 1.08 && line.isBold && txt.length < 60) {
+      const cleanH3 = txt.replace(/^#+\s*/, '');
+      mdBlocks.push(`### ${cleanH3}`);
+      i++;
+      continue;
+    }
+
+    // Lists
+    const listMatch = txt.match(/^(?:[•⁃–*\-o]\s+|\d+[\.\)]\s+|[a-zA-Z][\.\)]\s+)(.+)$/);
     if (listMatch) {
-      if (/^\d+[\.\)]/.test(trimmed)) {
-        result.push(trimmed.replace(/^(\d+)[\.\)]\s+/, '$1. '));
+      if (/^\d+[\.\)]/.test(txt)) {
+        mdBlocks.push(txt.replace(/^(\d+)[\.\)]\s+/, '$1. '));
       } else {
-        result.push('- ' + listMatch[1]);
+        mdBlocks.push('- ' + listMatch[1]);
       }
       i++;
       continue;
     }
 
-    // Check for Heading patterns
-    // 1. ALL CAPS line (under 60 chars)
-    // 2. Numbered section like "1. Introduction" or "1.1 Subsection"
-    // 3. Short title-like line without ending punctuation
-    if (isHeadingCandidate(trimmed, i, lines.length)) {
-      const headingLevel = getHeadingLevel(trimmed);
-      const cleanHeading = trimmed.replace(/^[#\s]+/, '').replace(/^(\d+(\.\d+)*)\s+/, '$1 ');
-      result.push(`${headingLevel} ${cleanHeading}`);
+    // Blockquotes
+    if (/^(note|warning|important|caution|quote):/i.test(txt)) {
+      mdBlocks.push(`> **${txt.split(':')[0]}**: ${txt.substring(txt.indexOf(':') + 1).trim()}`);
       i++;
       continue;
     }
 
-    // Check for Blockquote or Note
-    if (/^(note|warning|important|caution|quote):/i.test(trimmed)) {
-      result.push(`> **${trimmed.split(':')[0]}**: ${trimmed.substring(trimmed.indexOf(':') + 1).trim()}`);
-      i++;
-      continue;
-    }
-
-    // Regular paragraph / text block
-    result.push(trimmed);
+    mdBlocks.push(txt);
     i++;
   }
 
-  // Join paragraphs cleanly
-  return result.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+  const pageHeader = totalPages > 1 ? `<!-- Page ${pageNum} -->\n` : '';
+  return pageHeader + mdBlocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/**
- * Determines if a line is likely a document heading
- */
-function isHeadingCandidate(trimmed: string, index: number, totalLines: number): boolean {
-  if (trimmed.length > 80) return false;
-  if (/[.!?]$/.test(trimmed) && !/^\d+(\.\d+)*\s+/.test(trimmed)) return false;
-
-  // ALL CAPS headings e.g. "ABSTRACT", "1. INTRODUCTION"
-  if (trimmed.length >= 3 && trimmed === trimmed.toUpperCase() && /[A-Z]/.test(trimmed)) {
-    return true;
-  }
-
-  // Numbered section heading e.g. "1. Introduction" or "2.3.1 Experimental Results"
-  if (/^\d+(\.\d+)*\s+[A-Z]/.test(trimmed)) {
-    return true;
-  }
-
-  // Section title keyword start e.g. "Chapter 1", "Section 2"
-  if (/^(chapter|section|part|appendix|abstract|conclusion|references|summary|table of contents)\b/i.test(trimmed)) {
-    return true;
-  }
-
-  return false;
+function isTableLine(line: PdfLine): boolean {
+  if (line.items.length >= 2) return true;
+  const parts = line.text.split(/\s{2,}|\t|\|/).map((p) => p.trim()).filter(Boolean);
+  return parts.length >= 2;
 }
 
-function getHeadingLevel(trimmed: string): string {
-  if (/^(chapter|part)\b/i.test(trimmed) || (trimmed === trimmed.toUpperCase() && trimmed.length < 30)) {
-    return '#';
-  }
-  if (/^\d+\.\d+\.\d+/.test(trimmed)) {
-    return '###';
-  }
-  if (/^\d+\.\d+/.test(trimmed)) {
-    return '##';
-  }
-  return '#';
-}
-
-/**
- * Identifies whether current and subsequent lines represent tabular column data
- */
-function isTableCandidate(lines: string[], startIndex: number): boolean {
-  const line = lines[startIndex];
-  // Look for multiple columns separated by 2+ spaces or tabs or pipes
-  const columns = line.split(/\s{2,}|\t|\|/).map(c => c.trim()).filter(Boolean);
-  if (columns.length < 2) return false;
-
-  // Check next line to see if it also has multiple columns
-  if (startIndex + 1 < lines.length) {
-    const nextLine = lines[startIndex + 1];
-    const nextCols = nextLine.split(/\s{2,}|\t|\|/).map(c => c.trim()).filter(Boolean);
-    if (nextCols.length >= 2) return true;
-  }
-
-  return false;
-}
-
-/**
- * Converts a series of tab/space-aligned lines into a Markdown table
- */
-function parseTableBlock(lines: string[], startIndex: number): { tableMd: string; nextIndex: number } {
+function parseTableFromLines(lines: PdfLine[], startIndex: number): { tableMd: string; nextIndex: number } {
   const tableRows: string[][] = [];
   let curr = startIndex;
 
   while (curr < lines.length) {
     const line = lines[curr];
-    const cols = line.split(/\s{2,}|\t|\|/).map(c => c.trim()).filter(Boolean);
+    let cols: string[] = [];
 
-    if (cols.length < 2) {
-      break;
+    if (line.items.length >= 2) {
+      cols = line.items.map((it) => it.str.trim()).filter(Boolean);
+    } else {
+      cols = line.text.split(/\s{2,}|\t|\|/).map((c) => c.trim()).filter(Boolean);
     }
+
+    if (cols.length < 2) break;
 
     tableRows.push(cols);
     curr++;
   }
 
-  if (tableRows.length === 0) {
-    return { tableMd: lines[startIndex], nextIndex: startIndex + 1 };
+  if (tableRows.length < 2) {
+    return { tableMd: lines[startIndex].text, nextIndex: startIndex + 1 };
   }
 
-  // Find max columns
-  const maxCols = Math.max(...tableRows.map(r => r.length));
-
-  // Build GFM Table
+  const maxCols = Math.max(...tableRows.map((r) => r.length));
   const mdLines: string[] = [];
-  
-  // Header Row
+
   const header = tableRows[0];
   while (header.length < maxCols) header.push('');
   mdLines.push('| ' + header.join(' | ') + ' |');
-
-  // Separator Row
   mdLines.push('| ' + new Array(maxCols).fill('---').join(' | ') + ' |');
 
-  // Data Rows
   for (let r = 1; r < tableRows.length; r++) {
     const row = tableRows[r];
     while (row.length < maxCols) row.push('');
     mdLines.push('| ' + row.join(' | ') + ' |');
   }
 
-  return {
-    tableMd: mdLines.join('\n'),
-    nextIndex: curr,
-  };
+  return { tableMd: mdLines.join('\n'), nextIndex: curr };
 }
+

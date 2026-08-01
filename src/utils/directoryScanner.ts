@@ -46,7 +46,7 @@ export function parseFileListToScanItems(fileList: FileList | File[]): Directory
  */
 export async function scanDirectoryWithNativePicker(): Promise<DirectoryScanItem[]> {
   if (!('showDirectoryPicker' in window)) {
-    throw new Error('Directory Picker API not supported on this browser. Use folder selection input instead.');
+    throw new Error('Directory Picker API not supported on this browser.');
   }
 
   const items: DirectoryScanItem[] = [];
@@ -54,9 +54,10 @@ export async function scanDirectoryWithNativePicker(): Promise<DirectoryScanItem
     const dirHandle = await (window as any).showDirectoryPicker();
     await scanHandleRecursively(dirHandle, '', items);
   } catch (err: any) {
-    if (err.name !== 'AbortError') {
-      console.error('Directory picker scan error:', err);
+    if (err.name === 'AbortError') {
+      return [];
     }
+    throw err;
   }
   return items;
 }

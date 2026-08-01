@@ -151,8 +151,11 @@ export const AiRefineToolbar: React.FC<AiRefineToolbarProps> = ({
           <select
             value={targetLanguage}
             onChange={(e) => setTargetLanguage(e.target.value)}
-            className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+            className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm font-sans"
           >
+            <option value="Arabic">Arabic (العربية)</option>
+            <option value="Amharic">Amharic (አማርኛ)</option>
+            <option value="English">English</option>
             <option value="Spanish">Spanish</option>
             <option value="French">French</option>
             <option value="German">German</option>

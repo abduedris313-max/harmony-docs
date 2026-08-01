@@ -5,6 +5,7 @@ export interface ConversionOptions {
   mathLatex: boolean;
   cleanHeadersFooters: boolean;
   pageRange: string;
+  languageHint?: string;
 }
 
 export interface DocumentStats {
