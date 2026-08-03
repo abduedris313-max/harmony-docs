@@ -23,6 +23,7 @@ import {
   SpellCheck,
   FileCheck2,
   Languages,
+  Maximize2,
 } from 'lucide-react';
 
 interface MarkdownToolbarProps {
@@ -43,6 +44,8 @@ interface MarkdownToolbarProps {
   textDirection?: 'auto' | 'rtl' | 'ltr';
   onChangeTextDirection?: (dir: 'auto' | 'rtl' | 'ltr') => void;
   detectedLangInfo?: { isRtl: boolean; detectedLang: string; autoIsRtl: boolean };
+  onToggleZenMode?: () => void;
+  isZenMode?: boolean;
 }
 
 export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
@@ -63,6 +66,8 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   textDirection = 'auto',
   onChangeTextDirection,
   detectedLangInfo,
+  onToggleZenMode,
+  isZenMode = false,
 }) => {
   return (
     <div className="bg-white border-b border-slate-200 px-3 py-1.5 flex flex-wrap items-center justify-between gap-1 text-slate-600">
@@ -323,6 +328,21 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
                 {syntaxIssuesCount}
               </span>
             )}
+          </button>
+        )}
+
+        {onToggleZenMode && (
+          <button
+            onClick={onToggleZenMode}
+            className={`px-2 py-1 rounded text-xs flex items-center space-x-1 transition-all ${
+              isZenMode
+                ? 'bg-purple-600 text-white font-bold shadow-xs'
+                : 'bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-semibold'
+            }`}
+            title="Zen Mode - Distraction-Free Full-Screen Writing"
+          >
+            <Maximize2 className="w-3.5 h-3.5 text-purple-600" />
+            <span className="text-[11px]">Zen Mode</span>
           </button>
         )}
 

@@ -161,9 +161,9 @@ function normalizeArabicAndEthiopicText(str: string): string {
 }
 
 function buildLineObject(items: PdfItem[]): PdfLine {
-  const hasArabic = items.some((it) => /[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(it.str));
+  const hasRtl = items.some((it) => /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(it.str));
 
-  if (hasArabic) {
+  if (hasRtl) {
     const isXDescending = items.length > 1 && items[0].x > items[items.length - 1].x;
     if (isXDescending) {
       items.sort((a, b) => b.x - a.x);

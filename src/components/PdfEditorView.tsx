@@ -25,10 +25,15 @@ import {
   Upload,
   UploadCloud,
   Minimize2,
-  RefreshCw
+  RefreshCw,
+  MousePointer
 } from 'lucide-react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
+
+if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.0.379'}/pdf.worker.min.mjs`;
+}
 
 // Sample PDFs reference
 import { SAMPLE_PDFS, SamplePdf } from '../data/samplePdfs';
@@ -115,6 +120,65 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [tempDrawingPoints, setTempDrawingPoints] = useState<{ x: number; y: number }[]>([]);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const annotatorContainerRef = useRef<HTMLDivElement>(null);
+
+  // Selected Annotation ID for select & edit mode
+  const [selectedAnnoId, setSelectedAnnoId] = useState<string | null>(null);
+  const [draggingAnno, setDraggingAnno] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
+
+  const handleUpdateAnnotation = (pageId: string, annoId: string, updatedFields: Partial<Annotation>) => {
+    setPages(prev => prev.map(p => {
+      if (p.id === pageId) {
+        return {
+          ...p,
+          annotations: p.annotations.map(a => {
+            if (a.id === annoId) {
+              if (a.type === 'draw' && updatedFields.x !== undefined && updatedFields.y !== undefined && a.points) {
+                // Shift hand drawing points relatively
+                const dx = updatedFields.x - a.x;
+                const dy = updatedFields.y - a.y;
+                const shiftedPoints = a.points.map(pt => ({
+                  x: pt.x + dx,
+                  y: pt.y + dy
+                }));
+                return { ...a, ...updatedFields, points: shiftedPoints };
+              }
+              return { ...a, ...updatedFields };
+            }
+            return a;
+          })
+        };
+      }
+      return p;
+    }));
+  };
+
+  const handleDeleteAnnotation = (pageId: string, annoId: string) => {
+    setPages(prev => prev.map(p => {
+      if (p.id === pageId) {
+        return {
+          ...p,
+          annotations: p.annotations.filter(a => a.id !== annoId)
+        };
+      }
+      return p;
+    }));
+  };
+
+  const handleAnnoMouseDown = (e: React.MouseEvent, anno: Annotation) => {
+    if (annotatorTool !== 'select') return;
+    e.stopPropagation();
+    const rect = annotatorContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const annoLeftPx = rect.left + (anno.x / 100) * rect.width;
+    const annoTopPx = rect.top + (anno.y / 100) * rect.height;
+
+    const offsetX = e.clientX - annoLeftPx;
+    const offsetY = e.clientY - annoTopPx;
+
+    setDraggingAnno({ id: anno.id, offsetX, offsetY });
+    setSelectedAnnoId(anno.id);
+  };
 
   // File picker references
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -320,8 +384,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     try {
       setIsLoading(true);
       
-      // Load source PDF document
-      const srcDoc = await PDFDocument.load(pdfBytes);
+      // Load source PDF document if we have pages that depend on it
+      let srcDoc = null;
+      const hasNonBlankPages = pages.some(p => !p.isBlank);
+      if (hasNonBlankPages) {
+        if (pdfBytes.length === 0) {
+          throw new Error('Source PDF is empty, but pages rely on source layout.');
+        }
+        srcDoc = await PDFDocument.load(pdfBytes);
+      }
+
       // Create a brand new destination PDF document
       const destDoc = await PDFDocument.create();
 
@@ -343,6 +415,9 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
           // Add a standard Letter page (612 x 792 pt)
           destPage = destDoc.addPage([612, 792]);
         } else {
+          if (!srcDoc) {
+            throw new Error('Source PDF could not be loaded, but a non-blank page was requested.');
+          }
           // Copy page from source document
           const [copiedPage] = await destDoc.copyPages(srcDoc, [p.originalIndex]);
           destDoc.addPage(copiedPage);
@@ -449,12 +524,22 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     return pages.find(p => p.id === selectedPageId) || null;
   }, [pages, selectedPageId]);
 
+  const selectedAnno = useMemo(() => {
+    if (!selectedAnnoId || !activePageItem) return null;
+    return activePageItem.annotations.find(a => a.id === selectedAnnoId) || null;
+  }, [selectedAnnoId, activePageItem]);
+
   const handleAnnotatorCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!activePageItem || !annotatorContainerRef.current) return;
 
     const rect = annotatorContainerRef.current.getBoundingClientRect();
     const clickX = ((e.clientX - rect.left) / rect.width) * 100;
     const clickY = ((e.clientY - rect.top) / rect.height) * 100;
+
+    if (annotatorTool === 'select') {
+      setSelectedAnnoId(null);
+      return;
+    }
 
     if (annotatorTool === 'text') {
       if (!textInput.trim()) {
@@ -504,50 +589,66 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   };
 
   const handleAnnotatorMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (annotatorTool !== 'draw' || !annotatorContainerRef.current) return;
-    setIsDrawing(true);
-    
-    const rect = annotatorContainerRef.current.getBoundingClientRect();
-    const clickX = ((e.clientX - rect.left) / rect.width) * 100;
-    const clickY = ((e.clientY - rect.top) / rect.height) * 100;
-    
-    setTempDrawingPoints([{ x: clickX, y: clickY }]);
+    if (annotatorTool === 'draw' && annotatorContainerRef.current) {
+      setIsDrawing(true);
+      const rect = annotatorContainerRef.current.getBoundingClientRect();
+      const clickX = ((e.clientX - rect.left) / rect.width) * 100;
+      const clickY = ((e.clientY - rect.top) / rect.height) * 100;
+      setTempDrawingPoints([{ x: clickX, y: clickY }]);
+    }
   };
 
   const handleAnnotatorMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDrawing || annotatorTool !== 'draw' || !annotatorContainerRef.current) return;
-    
-    const rect = annotatorContainerRef.current.getBoundingClientRect();
-    const clickX = ((e.clientX - rect.left) / rect.width) * 100;
-    const clickY = ((e.clientY - rect.top) / rect.height) * 100;
-    
-    setTempDrawingPoints(prev => [...prev, { x: clickX, y: clickY }]);
+    if (annotatorTool === 'draw' && isDrawing && annotatorContainerRef.current) {
+      const rect = annotatorContainerRef.current.getBoundingClientRect();
+      const clickX = ((e.clientX - rect.left) / rect.width) * 100;
+      const clickY = ((e.clientY - rect.top) / rect.height) * 100;
+      setTempDrawingPoints(prev => [...prev, { x: clickX, y: clickY }]);
+      return;
+    }
+
+    if (annotatorTool === 'select' && draggingAnno && annotatorContainerRef.current) {
+      const rect = annotatorContainerRef.current.getBoundingClientRect();
+      if (rect) {
+        const mouseXInContainer = e.clientX - rect.left - draggingAnno.offsetX;
+        const mouseYInContainer = e.clientY - rect.top - draggingAnno.offsetY;
+        
+        const nextX = Math.max(0, Math.min(100, (mouseXInContainer / rect.width) * 100));
+        const nextY = Math.max(0, Math.min(100, (mouseYInContainer / rect.height) * 100));
+        
+        handleUpdateAnnotation(selectedPageId!, draggingAnno.id, { x: nextX, y: nextY });
+      }
+    }
   };
 
   const handleAnnotatorMouseUp = () => {
-    if (!isDrawing || annotatorTool !== 'draw' || tempDrawingPoints.length < 2) {
+    if (draggingAnno) {
+      setDraggingAnno(null);
+      return;
+    }
+
+    if (isDrawing && annotatorTool === 'draw' && tempDrawingPoints.length >= 2) {
       setIsDrawing(false);
+      const newAnno: Annotation = {
+        id: `anno-draw-${Date.now()}-${Math.random()}`,
+        type: 'draw',
+        x: tempDrawingPoints[0].x,
+        y: tempDrawingPoints[0].y,
+        color: strokeColor,
+        points: tempDrawingPoints,
+      };
+
+      setPages(prev => prev.map(p => {
+        if (p.id === selectedPageId) {
+          return { ...p, annotations: [...p.annotations, newAnno] };
+        }
+        return p;
+      }));
+
+      setTempDrawingPoints([]);
       return;
     }
     setIsDrawing(false);
-
-    const newAnno: Annotation = {
-      id: `anno-draw-${Date.now()}-${Math.random()}`,
-      type: 'draw',
-      x: tempDrawingPoints[0].x,
-      y: tempDrawingPoints[0].y,
-      color: strokeColor,
-      points: tempDrawingPoints,
-    };
-
-    setPages(prev => prev.map(p => {
-      if (p.id === selectedPageId) {
-        return { ...p, annotations: [...p.annotations, newAnno] };
-      }
-      return p;
-    }));
-
-    setTempDrawingPoints([]);
   };
 
   const handleUndoAnnotation = () => {
@@ -646,7 +747,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   // ---------------------------------------------------------------------------
 
   const handleExecuteSplit = async () => {
-    if (!pdfBytes) {
+    if (!pdfBytes || pdfBytes.length === 0) {
       onShowToast('No PDF loaded', 'Load a PDF file before extracting pages.', 'error');
       return;
     }
@@ -1118,6 +1219,22 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                           <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Markup Tool</p>
                           <div className="grid grid-cols-2 gap-1.5">
                             <button
+                              type="button"
+                              onClick={() => {
+                                setAnnotatorTool('select');
+                                setSelectedAnnoId(null);
+                              }}
+                              className={`p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
+                                annotatorTool === 'select'
+                                  ? 'bg-white border-indigo-400 text-indigo-600 shadow-2xs'
+                                  : 'bg-slate-100/50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                              }`}
+                            >
+                              <MousePointer className="w-3.5 h-3.5" />
+                              <span>Select / Edit</span>
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setAnnotatorTool('text')}
                               className={`p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
                                 annotatorTool === 'text'
@@ -1129,6 +1246,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                               <span>Text Box</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => setAnnotatorTool('highlight')}
                               className={`p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
                                 annotatorTool === 'highlight'
@@ -1140,18 +1258,226 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                               <span>Highlight</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => setAnnotatorTool('draw')}
-                              className={`p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border col-span-2 transition-all ${
+                              className={`p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
                                 annotatorTool === 'draw'
                                   ? 'bg-white border-pink-400 text-pink-600 shadow-2xs'
                                   : 'bg-slate-100/50 hover:bg-slate-100 border-slate-200 text-slate-700'
                               }`}
                             >
                               <PenTool className="w-3.5 h-3.5" />
-                              <span>Pen Draw (Freehand Signature)</span>
+                              <span>Pen Draw</span>
                             </button>
                           </div>
                         </div>
+
+                        {/* Page Elements List (Select Tool Only) */}
+                        {annotatorTool === 'select' && activePageItem && activePageItem.annotations.length > 0 && (
+                          <div className="space-y-1.5 animate-in fade-in duration-200">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Page Elements List</label>
+                            <div className="max-h-[140px] overflow-y-auto border border-slate-200 rounded-xl bg-white p-1.5 space-y-1 divide-y divide-slate-50">
+                              {activePageItem.annotations.map((anno, idx) => {
+                                const isSelected = selectedAnnoId === anno.id;
+                                return (
+                                  <button
+                                    key={anno.id}
+                                    type="button"
+                                    onClick={() => setSelectedAnnoId(anno.id)}
+                                    className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition-colors ${
+                                      isSelected ? 'bg-indigo-50 text-indigo-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 truncate">
+                                      <span
+                                        className="w-2.5 h-2.5 rounded-full shrink-0 border border-slate-300"
+                                        style={{ backgroundColor: anno.color }}
+                                      />
+                                      <span className="truncate">
+                                        {anno.type === 'text'
+                                          ? `Text: "${anno.text || 'Empty text'}"`
+                                          : anno.type === 'highlight'
+                                          ? `Highlight (${Math.round(anno.width || 0)}% w)`
+                                          : `Drawing #${idx + 1}`}
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] text-slate-400 uppercase bg-slate-100 px-1 py-0.2 rounded font-bold shrink-0">
+                                      {anno.type}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Selected Element Editor Panel */}
+                        {selectedAnno && (
+                          <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-3 shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-200">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
+                              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                                Edit {selectedAnno.type === 'text' ? 'Text Note' : selectedAnno.type === 'highlight' ? 'Highlight' : 'Drawing'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAnnoId(null)}
+                                className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
+                              >
+                                Deselect
+                              </button>
+                            </div>
+
+                            {selectedAnno.type === 'text' && (
+                              <div className="space-y-1.5">
+                                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Text Content</label>
+                                <input
+                                  type="text"
+                                  value={selectedAnno.text || ''}
+                                  onChange={(e) => {
+                                    handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { text: e.target.value });
+                                  }}
+                                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500 font-medium text-slate-800"
+                                />
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Font Size</span>
+                                  <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-lg p-0.5">
+                                    {[10, 14, 20, 28].map(sz => (
+                                      <button
+                                        key={sz}
+                                        type="button"
+                                        onClick={() => handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { fontSize: sz })}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-all ${
+                                          selectedAnno.fontSize === sz ? 'bg-white text-slate-800 shadow-3xs' : 'text-slate-500'
+                                        }`}
+                                      >
+                                        {sz}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {selectedAnno.type === 'highlight' && (
+                              <div className="space-y-2">
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                                    <span>Width: {Math.round(selectedAnno.width || 20)}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="5"
+                                    max="100"
+                                    value={selectedAnno.width || 20}
+                                    onChange={(e) => handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { width: parseInt(e.target.value) })}
+                                    className="w-full accent-amber-500 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                                    <span>Height: {Math.round(selectedAnno.height || 5)}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="1"
+                                    max="20"
+                                    value={selectedAnno.height || 5}
+                                    onChange={(e) => handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { height: parseInt(e.target.value) })}
+                                    className="w-full accent-amber-500 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="space-y-1.5">
+                              <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Element Color</span>
+                              <div className="flex gap-1 bg-slate-50 border border-slate-200 p-1.5 rounded-xl justify-between">
+                                {['#FF2D55', '#FFCC00', '#34C759', '#007AFF', '#AF52DE', '#000000'].map(c => (
+                                  <button
+                                    key={c}
+                                    type="button"
+                                    onClick={() => handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { color: c })}
+                                    className={`w-4.5 h-4.5 rounded-full border transition-all ${
+                                      selectedAnno.color === c ? 'ring-2 ring-blue-500/50 scale-110 border-white' : 'border-slate-300'
+                                    }`}
+                                    style={{ backgroundColor: c }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Position Nudge Controls */}
+                            <div className="space-y-1.5 bg-slate-50 border border-slate-200/60 p-2 rounded-xl">
+                              <div className="text-[10px] font-bold text-slate-400 uppercase text-center mb-1">Reposition Element</div>
+                              <div className="grid grid-cols-3 gap-1 max-w-[120px] mx-auto">
+                                <div />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextY = Math.max(0, (selectedAnno.y || 0) - 1.5);
+                                    handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { y: nextY });
+                                  }}
+                                  className="p-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-md text-[10px] font-bold transition-colors text-center"
+                                  title="Nudge Up"
+                                >
+                                  ▲
+                                </button>
+                                <div />
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextX = Math.max(0, (selectedAnno.x || 0) - 1.5);
+                                    handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { x: nextX });
+                                  }}
+                                  className="p-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-md text-[10px] font-bold transition-colors text-center"
+                                  title="Nudge Left"
+                                >
+                                  ◀
+                                </button>
+                                <div className="flex items-center justify-center text-[9px] font-bold text-slate-400">Shift</div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextX = Math.min(100, (selectedAnno.x || 0) + 1.5);
+                                    handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { x: nextX });
+                                  }}
+                                  className="p-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-md text-[10px] font-bold transition-colors text-center"
+                                  title="Nudge Right"
+                                >
+                                  ▶
+                                </button>
+
+                                <div />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextY = Math.min(100, (selectedAnno.y || 0) + 1.5);
+                                    handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { y: nextY });
+                                  }}
+                                  className="p-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-md text-[10px] font-bold transition-colors text-center"
+                                  title="Nudge Down"
+                                >
+                                  ▼
+                                </button>
+                                <div />
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleDeleteAnnotation(selectedPageId!, selectedAnno.id);
+                                setSelectedAnnoId(null);
+                              }}
+                              className="w-full py-1 text-center text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border border-red-100 transition-colors flex items-center justify-center gap-1"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Delete Element</span>
+                            </button>
+                          </div>
+                        )}
 
                         {/* Text input specific fields */}
                         {annotatorTool === 'text' && (
@@ -1162,6 +1488,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                               value={textInput}
                               onChange={(e) => setTextInput(e.target.value)}
                               placeholder="Type something to place on PDF..."
+                              dir="auto"
                               className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                             />
                             
@@ -1171,9 +1498,10 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                                 {[10, 14, 20, 28].map(sz => (
                                   <button
                                     key={sz}
+                                    type="button"
                                     onClick={() => setFontSize(sz)}
                                     className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-all ${
-                                      fontSize === sz ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500'
+                                      fontSize === sz ? 'bg-white text-slate-800 shadow-3xs' : 'text-slate-500'
                                     }`}
                                   >
                                     {sz}pt
@@ -1184,22 +1512,25 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                           </div>
                         )}
 
-                        <div className="space-y-1.5">
-                          <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Ink Color</p>
-                          <div className="flex gap-2 bg-white border border-slate-200 p-2.5 rounded-xl justify-between">
-                            {['#FF2D55', '#FFCC00', '#34C759', '#007AFF', '#AF52DE', '#000000'].map(c => (
-                              <button
-                                key={c}
-                                onClick={() => setStrokeColor(c)}
-                                className={`w-6 h-6 rounded-full border transition-all ${
-                                  strokeColor === c ? 'ring-2 ring-blue-500/50 scale-110 border-white' : 'border-slate-300'
-                                }`}
-                                style={{ backgroundColor: c }}
-                                title={c}
-                              />
-                            ))}
+                        {annotatorTool !== 'select' && (
+                          <div className="space-y-1.5 animate-in fade-in duration-250">
+                            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Ink Color</p>
+                            <div className="flex gap-2 bg-white border border-slate-200 p-2.5 rounded-xl justify-between">
+                              {['#FF2D55', '#FFCC00', '#34C759', '#007AFF', '#AF52DE', '#000000'].map(c => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => setStrokeColor(c)}
+                                  className={`w-6 h-6 rounded-full border transition-all ${
+                                    strokeColor === c ? 'ring-2 ring-blue-500/50 scale-110 border-white' : 'border-slate-300'
+                                  }`}
+                                  style={{ backgroundColor: c }}
+                                  title={c}
+                                />
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         <div className="p-3 bg-blue-50/50 border border-blue-100 text-blue-800 text-[11px] rounded-xl leading-relaxed space-y-1.5">
                           <div className="flex items-center gap-1 font-bold">
@@ -1207,6 +1538,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                             <span>How annotations are saved:</span>
                           </div>
                           <p>
+                            {annotatorTool === 'select' && "Click any text, highlight, or drawing elements to select, drag them around, or change their values."}
                             {annotatorTool === 'text' && "Type in the 'Note Content' box above, then click anywhere on the PDF page to drop your text box."}
                             {annotatorTool === 'highlight' && "Click anywhere on the PDF page to drop a semi-transparent highlighter segment."}
                             {annotatorTool === 'draw' && "Click, hold, and drag your cursor directly over the PDF page layout to paint freehand signatures/drawings."}
@@ -1234,11 +1566,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                               const r = parseInt(anno.color.slice(1, 3), 16) / 255;
                               const g = parseInt(anno.color.slice(3, 5), 16) / 255;
                               const b = parseInt(anno.color.slice(5, 7), 16) / 255;
+                              const isSelected = selectedAnnoId === anno.id;
 
                               if (anno.type === 'text') {
                                 return (
                                   <div
                                     key={anno.id}
+                                    dir="auto"
                                     style={{
                                       position: 'absolute',
                                       left: `${anno.x}%`,
@@ -1248,7 +1582,20 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                                       fontWeight: 'bold',
                                       whiteSpace: 'nowrap',
                                       transform: 'translateY(-50%)',
-                                      textShadow: '0 1px 2px rgba(255,255,255,0.8)'
+                                      textShadow: '0 1px 2px rgba(255,255,255,0.8)',
+                                      pointerEvents: 'auto',
+                                      cursor: annotatorTool === 'select' ? 'move' : 'pointer',
+                                      outline: isSelected ? '2px dashed #6366f1' : 'none',
+                                      outlineOffset: '4px',
+                                      borderRadius: isSelected ? '2px' : 'none',
+                                      backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                                      padding: isSelected ? '2px 4px' : '0',
+                                      zIndex: isSelected ? 30 : 20,
+                                    }}
+                                    onMouseDown={(e) => handleAnnoMouseDown(e, anno)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedAnnoId(anno.id);
                                     }}
                                   >
                                     {anno.text}
@@ -1267,8 +1614,18 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                                       width: `${anno.width || 20}%`,
                                       height: `${anno.height || 5}%`,
                                       backgroundColor: anno.color,
-                                      opacity: 0.35,
+                                      opacity: isSelected ? 0.65 : 0.35,
                                       borderRadius: '2px',
+                                      pointerEvents: 'auto',
+                                      cursor: annotatorTool === 'select' ? 'move' : 'pointer',
+                                      outline: isSelected ? '2px dashed #6366f1' : 'none',
+                                      outlineOffset: '2px',
+                                      zIndex: isSelected ? 30 : 20,
+                                    }}
+                                    onMouseDown={(e) => handleAnnoMouseDown(e, anno)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedAnnoId(anno.id);
                                     }}
                                   />
                                 );
@@ -1276,13 +1633,30 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
                               if (anno.type === 'draw' && anno.points && anno.points.length > 1) {
                                 return (
-                                  <svg key={anno.id} className="absolute inset-0 w-full h-full">
+                                  <svg key={anno.id} className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
+                                    {/* Invisible thick helper path for extremely easy mouse/touch selection */}
+                                    <polyline
+                                      fill="none"
+                                      stroke="transparent"
+                                      strokeWidth="15"
+                                      points={anno.points.map(p => `${p.x}%,${p.y}%`).join(' ')}
+                                      style={{ pointerEvents: 'auto', cursor: annotatorTool === 'select' ? 'move' : 'pointer' }}
+                                      onMouseDown={(e) => handleAnnoMouseDown(e, anno)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedAnnoId(anno.id);
+                                      }}
+                                    />
+                                    {/* Visual path rendering */}
                                     <polyline
                                       fill="none"
                                       stroke={anno.color}
-                                      strokeWidth="2.5"
+                                      strokeWidth={isSelected ? "4.5" : "2.5"}
                                       points={anno.points.map(p => `${p.x}%,${p.y}%`).join(' ')}
-                                      style={{ vectorEffect: 'non-scaling-stroke' }}
+                                      style={{ 
+                                        vectorEffect: 'non-scaling-stroke',
+                                        filter: isSelected ? 'drop-shadow(0 0 3px rgba(99, 102, 241, 0.6))' : 'none'
+                                      }}
                                     />
                                   </svg>
                                 );

@@ -14,6 +14,7 @@ import {
   Code,
   SpellCheck,
   FileCheck2,
+  Maximize2,
 } from 'lucide-react';
 
 interface FloatingToolMenuProps {
@@ -31,6 +32,8 @@ interface FloatingToolMenuProps {
   onToggleLinter?: () => void;
   syntaxIssuesCount?: number;
   onOpenBookLibrary?: () => void;
+  onToggleZenMode?: () => void;
+  isZenMode?: boolean;
 }
 
 export const FloatingToolMenu: React.FC<FloatingToolMenuProps> = ({
@@ -48,6 +51,8 @@ export const FloatingToolMenu: React.FC<FloatingToolMenuProps> = ({
   onToggleLinter,
   syntaxIssuesCount = 0,
   onOpenBookLibrary,
+  onToggleZenMode,
+  isZenMode = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -63,6 +68,32 @@ export const FloatingToolMenu: React.FC<FloatingToolMenuProps> = ({
               onClick={() => setIsOpen(false)}
             />
           </div>
+
+          {onToggleZenMode && (
+            <button
+              onClick={() => {
+                onToggleZenMode();
+                setIsOpen(false);
+              }}
+              className={`flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-xl transition-all text-left ${
+                isZenMode
+                  ? 'bg-purple-600 text-white'
+                  : 'text-purple-700 hover:bg-purple-50'
+              }`}
+            >
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                isZenMode ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
+              }`}>
+                <Maximize2 className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <div>{isZenMode ? 'Exit Zen Mode' : 'Zen Mode'}</div>
+                <div className={`text-[10px] font-normal ${isZenMode ? 'text-purple-200' : 'text-slate-400'}`}>
+                  Distraction-free writing
+                </div>
+              </div>
+            </button>
+          )}
 
           {onOpenBookLibrary && (
             <button

@@ -10,6 +10,7 @@ import { CloudStorageModal } from './components/CloudStorageModal';
 import { ConversionSettingsModal } from './components/ConversionSettingsModal';
 import { BookLibraryModal } from './components/BookLibraryModal';
 import { BookReaderModal } from './components/BookReaderModal';
+import { DocumentCrudModal } from './components/DocumentCrudModal';
 import { DirectoryScannerModal } from './components/DirectoryScannerModal';
 import { LocalFileManagerModal } from './components/LocalFileManagerModal';
 import { ToastContainer } from './components/Toast';
@@ -63,6 +64,8 @@ export default function App() {
 
   const [isBookLibraryOpen, setIsBookLibraryOpen] = useState<boolean>(false);
   const [activeReadingBook, setActiveReadingBook] = useState<Book | null>(null);
+  const [isDocumentCrudOpen, setIsDocumentCrudOpen] = useState<boolean>(false);
+  const [selectedBookToEdit, setSelectedBookToEdit] = useState<Book | undefined>(undefined);
   const [isDirectoryScannerOpen, setIsDirectoryScannerOpen] = useState<boolean>(false);
   const [isLocalFileManagerOpen, setIsLocalFileManagerOpen] = useState<boolean>(false);
 
@@ -390,7 +393,8 @@ export default function App() {
 
       setActiveMarkdown(markdown);
       setActiveFilename(`${sample.id}.pdf`);
-      setActivePdfDataUrl(undefined);
+      const samplePdfDataUrl = `data:application/pdf;base64,${sample.base64}`;
+      setActivePdfDataUrl(samplePdfDataUrl);
 
       const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
       const newItem: HistoryItem = {
@@ -400,6 +404,7 @@ export default function App() {
         markdown,
         fileSizeBytes: 245000,
         wordCount,
+        pdfDataUrl: samplePdfDataUrl,
       };
 
       setHistory((prev) => [newItem, ...prev.slice(0, 19)]);
@@ -665,6 +670,60 @@ export default function App() {
     showToast('Document Updated', updatedBook.title);
   };
 
+  const handleEditBookDetails = (book: Book) => {
+    setSelectedBookToEdit(book);
+    setIsDocumentCrudOpen(true);
+  };
+
+  const handleCreateBookDetails = () => {
+    setSelectedBookToEdit(undefined);
+    setIsDocumentCrudOpen(true);
+  };
+
+  const handleSaveDocument = (bookData: Partial<Book> | Book) => {
+    if (bookData.id) {
+      // UPDATE
+      const updatedBook = bookData as Book;
+      setBooks((prev) => prev.map((b) => (b.id === updatedBook.id ? updatedBook : b)));
+      saveToOfflineStore('books', updatedBook);
+      showToast('Document Details Updated', updatedBook.title);
+    } else {
+      // CREATE
+      const colors = [
+        'from-[#007AFF] to-indigo-950',
+        'from-[#34C759] to-teal-900',
+        'from-[#FF9500] to-rose-800',
+        'from-[#AF52DE] to-indigo-950',
+        'from-[#1C1C1E] to-slate-900',
+        'from-[#FF2D55] to-purple-900'
+      ];
+      const cleanTitle = (bookData.title || 'Untitled Document').replace(/\.[^/.]+$/, '');
+      
+      const newBook: Book = {
+        id: `manual-${Date.now()}`,
+        title: cleanTitle,
+        author: bookData.author || 'Manual Draft',
+        source: 'local',
+        category: bookData.category || 'General',
+        shelf: bookData.shelf || 'To Read',
+        content: bookData.content || '',
+        coverColor: bookData.coverColor || colors[Math.floor(Math.random() * colors.length)],
+        progressPercent: 0,
+        lastReadTimestamp: Date.now(),
+        tags: bookData.tags || ['manual'],
+        wordCount: bookData.wordCount || 1,
+        fileFormat: bookData.fileFormat || 'md',
+        description: bookData.description || '',
+        bookmarks: [],
+        isFavorite: bookData.isFavorite || false,
+      };
+
+      setBooks((prev) => [newBook, ...prev]);
+      saveToOfflineStore('books', newBook);
+      showToast('Document Created', `Successfully added ${newBook.title}`);
+    }
+  };
+
   // Import Scanned Directory Items
   const handleImportScannedItems = async (items: DirectoryScanItem[], targetFolderId?: string) => {
     const newBooks: Book[] = [];
@@ -777,6 +836,13 @@ export default function App() {
     setIsLocalFileManagerOpen(false);
   };
 
+  const handleNewBlankDocument = () => {
+    setActiveMarkdown('# New Document\n\nType your notes here...');
+    setActiveFilename('Untitled_Note.md');
+    setActivePdfDataUrl(undefined);
+    setCurrentView('editor');
+  };
+
   const handleOpenBookInEditor = (book: Book) => {
     setActiveMarkdown(book.content);
     setActiveFilename(`${book.title}.md`);
@@ -806,6 +872,7 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNewDocument={handleNewDocument}
         onLoadSample={() => handleConvertSample(SAMPLE_PDFS[0], options)}
+        onNewBlankDocument={handleNewBlankDocument}
         historyCount={history.length}
         versionCount={snapshots.length}
         booksCount={books.length}
@@ -843,12 +910,9 @@ export default function App() {
             onDeleteBook={handleDeleteBook}
             onToggleFavorite={handleToggleFavoriteBook}
             onUpdateBookShelf={handleUpdateBookShelf}
-            onNewBlankDocument={() => {
-              setActiveMarkdown('# New Document\n\nType your notes here...');
-              setActiveFilename('Untitled_Note.md');
-              setActivePdfDataUrl(undefined);
-              setCurrentView('editor');
-            }}
+            onEditBookDetails={handleEditBookDetails}
+            onCreateBookDetails={handleCreateBookDetails}
+            onNewBlankDocument={handleNewBlankDocument}
             onOpenUploadView={() => setCurrentView('uploader')}
             onLoadSample={() => handleConvertSample(SAMPLE_PDFS[0], options)}
             onOpenCloudStorage={() => setIsCloudModalOpen(true)}
@@ -912,11 +976,21 @@ export default function App() {
         onDeleteBook={handleDeleteBook}
         onToggleFavorite={handleToggleFavoriteBook}
         onUpdateBookShelf={handleUpdateBookShelf}
+        onEditBookDetails={handleEditBookDetails}
         onOpenInEditor={(book) => {
           handleOpenBookInEditor(book);
           setIsBookLibraryOpen(false);
         }}
         onExportBookmarksToMarkdown={handleExportBookmarksToMarkdown}
+        onShowToast={showToast}
+      />
+
+      {/* Multi-Format Document Creator & Details Editor Modal */}
+      <DocumentCrudModal
+        isOpen={isDocumentCrudOpen}
+        onClose={() => setIsDocumentCrudOpen(false)}
+        book={selectedBookToEdit}
+        onSave={handleSaveDocument}
         onShowToast={showToast}
       />
 

@@ -105,7 +105,7 @@ export interface Book {
   tags: string[];
   wordCount: number;
   description?: string;
-  fileFormat?: 'md' | 'epub' | 'pdf' | 'txt';
+  fileFormat?: 'md' | 'epub' | 'pdf' | 'txt' | 'docx';
   cloudProvider?: CloudProvider;
   isFavorite?: boolean;
   bookmarks: Bookmark[];

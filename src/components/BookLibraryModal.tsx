@@ -34,6 +34,7 @@ interface BookLibraryModalProps {
   onDeleteBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
   onUpdateBookShelf: (bookId: string, shelf: BookShelf) => void;
+  onEditBookDetails: (book: Book) => void;
   onOpenInEditor: (book: Book) => void;
   onExportBookmarksToMarkdown: (markdown: string) => void;
   onShowToast: (title: string, message?: string, type?: 'success' | 'error' | 'info') => void;
@@ -48,6 +49,7 @@ export const BookLibraryModal: React.FC<BookLibraryModalProps> = ({
   onDeleteBook,
   onToggleFavorite,
   onUpdateBookShelf,
+  onEditBookDetails,
   onOpenInEditor,
   onExportBookmarksToMarkdown,
   onShowToast,
@@ -447,7 +449,7 @@ export const BookLibraryModal: React.FC<BookLibraryModalProps> = ({
                       </div>
 
                       {/* Card Action Buttons */}
-                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-1">
                         <button
                           onClick={() => onToggleFavorite(book.id)}
                           className={`p-1.5 rounded-lg transition-colors ${
@@ -461,11 +463,21 @@ export const BookLibraryModal: React.FC<BookLibraryModalProps> = ({
                         </button>
 
                         <button
-                          onClick={() => onOpenInEditor(book)}
-                          className="text-[11px] font-semibold text-[#007AFF] hover:underline flex items-center gap-1"
+                          onClick={() => onEditBookDetails(book)}
+                          className="text-[11px] font-semibold text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 px-2 py-1 rounded-lg border border-slate-200/60 flex items-center gap-1 shrink-0"
+                          title="Edit metadata & details"
                         >
-                          <Edit3 className="w-3 h-3" />
-                          <span>Edit Notes</span>
+                          <Edit3 className="w-3 h-3 text-[#007AFF]" />
+                          <span>Details</span>
+                        </button>
+
+                        <button
+                          onClick={() => onOpenInEditor(book)}
+                          className="text-[11px] font-semibold text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 px-2 py-1 rounded-lg border border-slate-200/60 flex items-center gap-1 shrink-0"
+                          title="Edit document content workspace"
+                        >
+                          <FileText className="w-3 h-3 text-emerald-600" />
+                          <span>Content</span>
                         </button>
 
                         <button

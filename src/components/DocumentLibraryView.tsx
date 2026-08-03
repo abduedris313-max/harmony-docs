@@ -24,7 +24,9 @@ import {
   ArrowUpRight,
   Printer,
   FolderSearch,
-  HardDrive
+  HardDrive,
+  Edit,
+  Edit3
 } from 'lucide-react';
 import { Book, BookShelf, DocumentFolder, HistoryItem, VersionSnapshot } from '../types';
 
@@ -40,6 +42,8 @@ interface DocumentLibraryViewProps {
   onDeleteBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
   onUpdateBookShelf: (bookId: string, shelf: BookShelf) => void;
+  onEditBookDetails: (book: Book) => void;
+  onCreateBookDetails: () => void;
   onNewBlankDocument: () => void;
   onOpenUploadView: () => void;
   onLoadSample: () => void;
@@ -67,6 +71,8 @@ export const DocumentLibraryView: React.FC<DocumentLibraryViewProps> = ({
   onDeleteBook,
   onToggleFavorite,
   onUpdateBookShelf,
+  onEditBookDetails,
+  onCreateBookDetails,
   onNewBlankDocument,
   onOpenUploadView,
   onLoadSample,
@@ -133,83 +139,13 @@ export const DocumentLibraryView: React.FC<DocumentLibraryViewProps> = ({
   const totalItemCount = books.length + history.length + snapshots.length;
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-[#F2F2F7] text-slate-900 pb-6 font-sans">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-[#F2F2F7] text-slate-900 pb-28 font-sans">
       
       {/* iOS HEADER BANNER & LARGE TITLE */}
       <div className={`bg-white/85 backdrop-blur-xl border-b border-black/10 sticky top-14 z-20 transition-all duration-300 ${
         isScrolled ? 'py-2 shadow-sm bg-white/95' : 'py-3.5 shadow-2xs'
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-2.5">
-          
-          {/* Top Row: Title + Quick Action Pills (Collapsible on Scroll) */}
-          <div
-            className={`transition-all duration-300 ease-in-out overflow-hidden ${
-              isScrolled
-                ? 'max-h-0 opacity-0 pointer-events-none -translate-y-2 scale-95'
-                : 'max-h-48 opacity-100 translate-y-0 pb-1'
-            }`}
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-[11px] font-bold text-[#007AFF] uppercase tracking-wider bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-100">
-                    Apple Books Style Library
-                  </span>
-                  <span className="text-xs text-slate-400 font-medium">{totalItemCount} items</span>
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-                  Document Library
-                </h1>
-              </div>
-
-              {/* iOS Action Buttons */}
-              <div className="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-                {onOpenScanner && (
-                  <button
-                    onClick={onOpenScanner}
-                    className="px-3.5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center space-x-1.5 shadow-sm active:scale-95 shrink-0"
-                  >
-                    <FolderSearch className="w-4 h-4 text-[#007AFF]" />
-                    <span>Scan Directory</span>
-                  </button>
-                )}
-
-                {onOpenLocalFileManager && (
-                  <button
-                    onClick={onOpenLocalFileManager}
-                    className="px-3 py-2 rounded-full bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all flex items-center space-x-1.5 shadow-2xs active:scale-95 shrink-0"
-                  >
-                    <HardDrive className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Local Files</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={onOpenUploadView}
-                  className="px-3.5 py-2 rounded-full bg-[#007AFF] hover:bg-[#0062CC] text-white text-xs font-bold transition-all flex items-center space-x-1.5 shadow-sm active:scale-95 shrink-0"
-                >
-                  <FileUp className="w-4 h-4" />
-                  <span>Upload PDF</span>
-                </button>
-
-                <button
-                  onClick={onLoadSample}
-                  className="px-3 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center space-x-1.5 shadow-xs active:scale-95 shrink-0"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span className="hidden xs:inline">Sample Document</span>
-                </button>
-
-                <button
-                  onClick={onNewBlankDocument}
-                  className="px-3 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-semibold transition-all flex items-center space-x-1.5 shadow-2xs active:scale-95 shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">New Note</span>
-                </button>
-              </div>
-            </div>
-          </div>
 
           {/* Search Input & View Toggle */}
           <div className="flex items-center gap-2">
@@ -253,6 +189,17 @@ export const DocumentLibraryView: React.FC<DocumentLibraryViewProps> = ({
                 <ListIcon className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Premium Create Document Button */}
+            <button
+              type="button"
+              onClick={onCreateBookDetails}
+              className="bg-slate-900 hover:bg-slate-800 active:scale-95 text-white py-1.5 px-3.5 rounded-2xl flex items-center gap-1.5 shrink-0 transition-all font-bold text-xs shadow-xs"
+              title="Create Document from scratch or import (PDF, Word, Markdown, Text)"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Document</span>
+            </button>
           </div>
 
           {/* Secondary Shelf Filter Pills (Top Header Row for Books) */}
@@ -390,14 +337,21 @@ export const DocumentLibraryView: React.FC<DocumentLibraryViewProps> = ({
                     <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-1">
                       <button
                         onClick={() => onOpenBookInReader(book)}
-                        className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1"
+                        className="flex-grow py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1"
                       >
                         <BookOpen className="w-3.5 h-3.5" />
                         <span>Read</span>
                       </button>
                       <button
+                        onClick={() => onEditBookDetails(book)}
+                        className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center"
+                        title="Edit Document Details & Format"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
                         onClick={() => onOpenBookInEditor(book)}
-                        className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center"
+                        className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center"
                         title="Edit in Markdown Workspace"
                       >
                         <FileText className="w-3.5 h-3.5" />
@@ -443,11 +397,25 @@ export const DocumentLibraryView: React.FC<DocumentLibraryViewProps> = ({
                         <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                       <button
+                        onClick={() => onEditBookDetails(book)}
+                        className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-all"
+                        title="Edit Details & Format"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => onOpenBookInEditor(book)}
                         className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-xl transition-all"
                         title="Edit in Markdown Workspace"
                       >
                         <FileText className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onDeleteBook(book.id)}
+                        className="p-1.5 text-rose-600 hover:text-rose-900 hover:bg-rose-100 rounded-xl transition-all"
+                        title="Delete Book"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -589,8 +557,8 @@ export const DocumentLibraryView: React.FC<DocumentLibraryViewProps> = ({
           )}
       </div>
 
-      {/* iOS NATIVE TAB BAR (Static Position) */}
-      <div className="static mt-8 bg-white/90 backdrop-blur-2xl border-t border-slate-200/80 px-2 sm:px-6 py-3 shadow-2xs transition-all">
+      {/* iOS NATIVE TAB BAR (Fixed Bottom Position) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 sm:px-6 py-2.5 shadow-lg transition-all">
         <div className="max-w-md mx-auto flex items-center justify-around">
           
           {/* Tab 1: All Items */}

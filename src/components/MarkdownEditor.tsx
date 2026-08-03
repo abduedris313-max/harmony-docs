@@ -63,6 +63,36 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [showTableBuilder, setShowTableBuilder] = useState(false);
   const [showSpellcheck, setShowSpellcheck] = useState(false);
   const [showLinterPanel, setShowLinterPanel] = useState(false);
+  const [isZenMode, setIsZenMode] = useState(false);
+
+  const handleToggleZenMode = () => {
+    setIsZenMode((prev) => {
+      const next = !prev;
+      if (next) {
+        setShowOutline(false);
+        setShowSpellcheck(false);
+        setShowLinterPanel(false);
+        setShowAiToolbar(false);
+        setShowSearch(false);
+        onShowToast('Zen Mode Activated', 'Distraction-free full-screen writing mode. Press Esc to exit.', 'info');
+      } else {
+        onShowToast('Exited Zen Mode', undefined, 'info');
+      }
+      return next;
+    });
+  };
+
+  // Keyboard shortcut for Esc key to exit Zen Mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isZenMode) {
+        setIsZenMode(false);
+        onShowToast('Exited Zen Mode', undefined, 'info');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isZenMode, onShowToast]);
 
   // Custom User Dictionary for Spellchecking
   const [userDictionary, setUserDictionary] = useState<Set<string>>(
@@ -351,166 +381,282 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   }, [markdown]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 py-3">
-      
-      {/* Top iOS Document Reader Header Bar */}
-      <div className="bg-white/90 backdrop-blur-md border border-black/5 rounded-t-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-slate-800 shadow-xs">
-        
-        {/* Document Title & File Info */}
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-full bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center font-bold text-xs">
-            <BookOpen className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2 tracking-tight">
-              <span>{filename || 'Converted Document.md'}</span>
-              <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-medium">
-                {stats.wordCount} words
-              </span>
-            </h2>
-            <div className="flex flex-wrap items-center space-x-2.5 text-[11px] text-slate-500">
-              <span>{stats.charCount} chars</span>
-              <span>•</span>
-              <span>{stats.lineCount} lines</span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3 text-slate-400" />
-                ~{stats.readingTimeMinutes} min read
-              </span>
-              {lastAutoSaveTime && (
-                <>
-                  <span>•</span>
-                  <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium text-[10px]">
-                    <Check className="w-3 h-3" />
-                    Auto-saved {new Date(lastAutoSaveTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </>
-              )}
+    <div
+      className={
+        isZenMode
+          ? `fixed inset-0 z-50 flex flex-col transition-colors duration-300 overflow-hidden ${
+              readerTheme === 'dark'
+                ? 'bg-[#121214] text-[#F2F2F7]'
+                : readerTheme === 'sepia'
+                ? 'bg-[#F4EFE6] text-[#433422]'
+                : 'bg-[#F4F4F6] text-slate-900'
+            }`
+          : 'flex flex-col h-[calc(100vh-4rem)] max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 py-3'
+      }
+    >
+      {/* Top Header Bar */}
+      {isZenMode ? (
+        <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-black/5 dark:border-white/10 px-4 py-2.5 flex items-center justify-between shadow-xs z-10 transition-colors">
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1.5 bg-purple-600/10 text-purple-700 dark:text-purple-300 border border-purple-500/20 px-3 py-1 rounded-full text-xs font-bold">
+              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+              <span>Zen Mode</span>
             </div>
+            <span className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate max-w-xs">
+              {filename || 'Document.md'}
+            </span>
+            <span className="hidden sm:inline-block text-xs text-slate-500 dark:text-slate-400 font-mono">
+              {stats.wordCount} words • ~{stats.readingTimeMinutes} min read
+            </span>
           </div>
-        </div>
 
-        {/* Right Action Controls: iOS Segmented Control + Reader Appearance */}
-        <div className="flex flex-wrap items-center gap-2">
-          
-          {/* iOS Reader Font Size & Theme Picker (Visible in Preview/Split mode) */}
-          {(viewMode === 'preview' || viewMode === 'split') && (
-            <div className="flex items-center space-x-1.5 bg-[#E5E5EA]/70 p-1 rounded-full border border-slate-200/50">
-              
-              {/* Font Size decrease/increase */}
-              <button
-                onClick={() => setReaderFontSize((prev) => Math.max(12, prev - 1))}
-                className="px-2 py-0.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-full hover:bg-white/80 transition-colors"
-                title="Decrease font size"
-              >
-                A-
-              </button>
-              <span className="text-[10px] text-slate-500 font-mono select-none">{readerFontSize}px</span>
-              <button
-                onClick={() => setReaderFontSize((prev) => Math.min(24, prev + 1))}
-                className="px-2 py-0.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-full hover:bg-white/80 transition-colors"
-                title="Increase font size"
-              >
-                A+
-              </button>
-
-              <div className="w-px h-3.5 bg-slate-300/80 mx-0.5" />
-
-              {/* iOS Themes */}
+          <div className="flex items-center space-x-2.5">
+            {/* Theme Picker */}
+            <div className="hidden md:flex items-center space-x-1.5 bg-slate-200/60 dark:bg-zinc-800 p-1 rounded-full">
               <button
                 onClick={() => setReaderTheme('paper')}
-                className={`w-4 h-4 rounded-full border border-slate-300 bg-white transition-transform ${
-                  readerTheme === 'paper' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                className={`w-4 h-4 rounded-full border border-slate-300 bg-white ${
+                  readerTheme === 'paper' ? 'ring-2 ring-purple-600 scale-110' : ''
                 }`}
                 title="Paper White Theme"
               />
               <button
                 onClick={() => setReaderTheme('sepia')}
-                className={`w-4 h-4 rounded-full border border-amber-300 bg-[#F8F1E5] transition-transform ${
-                  readerTheme === 'sepia' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                className={`w-4 h-4 rounded-full border border-amber-300 bg-[#F8F1E5] ${
+                  readerTheme === 'sepia' ? 'ring-2 ring-purple-600 scale-110' : ''
                 }`}
                 title="Warm Sepia Theme"
               />
               <button
                 onClick={() => setReaderTheme('dark')}
-                className={`w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-transform ${
-                  readerTheme === 'dark' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                className={`w-4 h-4 rounded-full border border-slate-700 bg-slate-800 ${
+                  readerTheme === 'dark' ? 'ring-2 ring-purple-600 scale-110' : ''
                 }`}
-                title="Dark Night Theme"
+                title="Dark Theme"
               />
             </div>
-          )}
 
-          {/* iOS Segmented Control */}
-          <div className="flex items-center p-1 bg-[#E3E3E8] rounded-full text-xs font-semibold shadow-inner">
-            <button
-              onClick={() => setViewMode('split')}
-              className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
-                viewMode === 'split'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Split Editor & Preview"
-            >
-              <Columns className="w-3.5 h-3.5 text-[#007AFF]" />
-              <span className="hidden sm:inline">Split</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('editor')}
-              className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
-                viewMode === 'editor'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Editor Only"
-            >
-              <Code2 className="w-3.5 h-3.5 text-[#007AFF]" />
-              <span className="hidden sm:inline">Editor</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('preview')}
-              className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
-                viewMode === 'preview'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="iOS Reader View"
-            >
-              <Eye className="w-3.5 h-3.5 text-[#007AFF]" />
-              <span className="hidden sm:inline">iOS Reader</span>
-            </button>
-
-            {pdfDataUrl && (
+            {/* View Mode Segmented Controls */}
+            <div className="flex items-center p-1 bg-slate-200/70 dark:bg-zinc-800 rounded-full text-xs font-semibold">
               <button
-                onClick={() => setViewMode('compare')}
+                onClick={() => setViewMode('editor')}
+                className={`px-3 py-1 rounded-full transition-all ${
+                  viewMode === 'editor'
+                    ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+                title="Editor Only"
+              >
+                Editor
+              </button>
+              <button
+                onClick={() => setViewMode('split')}
+                className={`px-3 py-1 rounded-full transition-all ${
+                  viewMode === 'split'
+                    ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+                title="Split View"
+              >
+                Split
+              </button>
+              <button
+                onClick={() => setViewMode('preview')}
+                className={`px-3 py-1 rounded-full transition-all ${
+                  viewMode === 'preview'
+                    ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+                title="iOS Reader View"
+              >
+                Reader
+              </button>
+            </div>
+
+            {/* Exit Zen Mode Button */}
+            <button
+              onClick={handleToggleZenMode}
+              className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-xs font-bold flex items-center space-x-1.5 shadow-md transition-all active:scale-95"
+              title="Exit Zen Mode (Press Esc)"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Exit Zen Mode</span>
+              <kbd className="hidden sm:inline-block text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-mono ml-0.5">
+                Esc
+              </kbd>
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Top iOS Document Reader Header Bar */
+        <div className="bg-white/90 backdrop-blur-md border border-black/5 rounded-t-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-slate-800 shadow-xs">
+          
+          {/* Document Title & File Info */}
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-full bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center font-bold text-xs">
+              <BookOpen className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2 tracking-tight">
+                <span>{filename || 'Converted Document.md'}</span>
+                <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-medium">
+                  {stats.wordCount} words
+                </span>
+              </h2>
+              <div className="flex flex-wrap items-center space-x-2.5 text-[11px] text-slate-500">
+                <span>{stats.charCount} chars</span>
+                <span>•</span>
+                <span>{stats.lineCount} lines</span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  ~{stats.readingTimeMinutes} min read
+                </span>
+                {lastAutoSaveTime && (
+                  <>
+                    <span>•</span>
+                    <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium text-[10px]">
+                      <Check className="w-3 h-3" />
+                      Auto-saved {new Date(lastAutoSaveTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Action Controls: iOS Segmented Control + Reader Appearance */}
+          <div className="flex flex-wrap items-center gap-2">
+            
+            {/* Zen Mode Button */}
+            <button
+              onClick={handleToggleZenMode}
+              className="px-3 py-1 rounded-full flex items-center space-x-1.5 transition-all text-xs font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 shadow-2xs"
+              title="Zen Mode (Distraction-Free Full-Screen Writing)"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-purple-600" />
+              <span className="hidden sm:inline">Zen Mode</span>
+            </button>
+
+            {/* iOS Reader Font Size & Theme Picker (Visible in Preview/Split mode) */}
+            {(viewMode === 'preview' || viewMode === 'split') && (
+              <div className="flex items-center space-x-1.5 bg-[#E5E5EA]/70 p-1 rounded-full border border-slate-200/50">
+                
+                {/* Font Size decrease/increase */}
+                <button
+                  onClick={() => setReaderFontSize((prev) => Math.max(12, prev - 1))}
+                  className="px-2 py-0.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-full hover:bg-white/80 transition-colors"
+                  title="Decrease font size"
+                >
+                  A-
+                </button>
+                <span className="text-[10px] text-slate-500 font-mono select-none">{readerFontSize}px</span>
+                <button
+                  onClick={() => setReaderFontSize((prev) => Math.min(24, prev + 1))}
+                  className="px-2 py-0.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-full hover:bg-white/80 transition-colors"
+                  title="Increase font size"
+                >
+                  A+
+                </button>
+
+                <div className="w-px h-3.5 bg-slate-300/80 mx-0.5" />
+
+                {/* iOS Themes */}
+                <button
+                  onClick={() => setReaderTheme('paper')}
+                  className={`w-4 h-4 rounded-full border border-slate-300 bg-white transition-transform ${
+                    readerTheme === 'paper' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                  }`}
+                  title="Paper White Theme"
+                />
+                <button
+                  onClick={() => setReaderTheme('sepia')}
+                  className={`w-4 h-4 rounded-full border border-amber-300 bg-[#F8F1E5] transition-transform ${
+                    readerTheme === 'sepia' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                  }`}
+                  title="Warm Sepia Theme"
+                />
+                <button
+                  onClick={() => setReaderTheme('dark')}
+                  className={`w-4 h-4 rounded-full border border-slate-700 bg-slate-800 transition-transform ${
+                    readerTheme === 'dark' ? 'scale-125 ring-2 ring-[#007AFF]' : ''
+                  }`}
+                  title="Dark Night Theme"
+                />
+              </div>
+            )}
+
+            {/* iOS Segmented Control */}
+            <div className="flex items-center p-1 bg-[#E3E3E8] rounded-full text-xs font-semibold shadow-inner">
+              <button
+                onClick={() => setViewMode('split')}
                 className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
-                  viewMode === 'compare'
+                  viewMode === 'split'
                     ? 'bg-white text-slate-900 shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="Compare with Original PDF"
+                title="Split Editor & Preview"
               >
-                <FileText className="w-3.5 h-3.5 text-amber-600" />
-                <span className="hidden sm:inline">PDF Compare</span>
+                <Columns className="w-3.5 h-3.5 text-[#007AFF]" />
+                <span className="hidden sm:inline">Split</span>
               </button>
-            )}
+
+              <button
+                onClick={() => setViewMode('editor')}
+                className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                  viewMode === 'editor'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Editor Only"
+              >
+                <Code2 className="w-3.5 h-3.5 text-[#007AFF]" />
+                <span className="hidden sm:inline">Editor</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('preview')}
+                className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                  viewMode === 'preview'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="iOS Reader View"
+              >
+                <Eye className="w-3.5 h-3.5 text-[#007AFF]" />
+                <span className="hidden sm:inline">iOS Reader</span>
+              </button>
+
+              {pdfDataUrl && (
+                <button
+                  onClick={() => setViewMode('compare')}
+                  className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                    viewMode === 'compare'
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Compare with Original PDF"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="hidden sm:inline">PDF Compare</span>
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowOutline(!showOutline)}
+              className={`p-2 rounded-full transition-all ${
+                showOutline ? 'bg-[#007AFF] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200/70'
+              }`}
+              title="Document Heading Outline"
+            >
+              <List className="w-4 h-4" />
+            </button>
+
           </div>
 
-          <button
-            onClick={() => setShowOutline(!showOutline)}
-            className={`p-2 rounded-full transition-all ${
-              showOutline ? 'bg-[#007AFF] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200/70'
-            }`}
-            title="Document Heading Outline"
-          >
-            <List className="w-4 h-4" />
-          </button>
-
         </div>
-
-      </div>
+      )}
 
       {/* AI Refinement Toolbar (collapsible) */}
       {showAiToolbar && (
@@ -551,6 +697,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         textDirection={textDirection}
         onChangeTextDirection={setTextDirection}
         detectedLangInfo={autoDetectInfo}
+        onToggleZenMode={handleToggleZenMode}
+        isZenMode={isZenMode}
       />
 
       {/* Main Content View (Editor + Preview) */}
@@ -711,14 +859,16 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
       </div>
 
-      {/* Bottom Export Bar */}
-      <div className="rounded-b-xl overflow-hidden shadow-lg border-t-0">
-        <ExportPanel
-          markdown={markdown}
-          filename={filename}
-          onShowToast={onShowToast}
-        />
-      </div>
+      {/* Bottom Export Bar (Hidden in Zen Mode to minimize distraction) */}
+      {!isZenMode && (
+        <div className="rounded-b-xl overflow-hidden shadow-lg border-t-0">
+          <ExportPanel
+            markdown={markdown}
+            filename={filename}
+            onShowToast={onShowToast}
+          />
+        </div>
+      )}
 
       {/* Floating Action Menu for Quick Tools */}
       <FloatingToolMenu
@@ -736,6 +886,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         onToggleLinter={() => setShowLinterPanel(!showLinterPanel)}
         syntaxIssuesCount={syntaxIssues.length}
         onOpenBookLibrary={onOpenBookLibrary}
+        onToggleZenMode={handleToggleZenMode}
+        isZenMode={isZenMode}
       />
 
       {/* Markdown Quick Reference Help Modal */}
