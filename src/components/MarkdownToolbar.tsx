@@ -24,6 +24,7 @@ import {
   FileCheck2,
   Languages,
   Maximize2,
+  LayoutTemplate,
 } from 'lucide-react';
 
 interface MarkdownToolbarProps {
@@ -69,11 +70,31 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
   onToggleZenMode,
   isZenMode = false,
 }) => {
+  const [showTemplates, setShowTemplates] = React.useState(false);
+
+  const templates = [
+    {
+      name: 'Academic Paper',
+      desc: 'Title, Abstract, Introduction, Methodology, Results, and References',
+      content: `# Academic Paper Title\n\n## Abstract\nProvide a concise summary of the research background, methodology, key findings, and conclusions.\n\n## 1. Introduction\nIntroduce the research topic, context, literature review, and the scope of the study.\n\n## 2. Methodology\nDetail the data collection, experimental design, and analytical tools used in this study.\n\n## 3. Results & Discussion\nPresent key findings, data analysis, and graphs.\n\n| Variable | Value | Status |\n| --- | --- | --- |\n| Control Group | 1.02 | Stable |\n| Treatment A | 2.45 | Active |\n\n## 4. Conclusion\nSummarize results and present future work.\n\n## References\n- [1] Author, A. (2026). *Journal of Modern Science*, 12(3), 45-56.`
+    },
+    {
+      name: 'Meeting Notes',
+      desc: 'Agenda, discussion notes, and actionable task checkboxes',
+      content: `# Meeting Notes: [Project Name]\n\n**Date:** August 8, 2026  \n**Time:** 10:00 AM - 11:00 AM  \n**Facilitator:** [Name]  \n**Attendees:** [Name 1], [Name 2]\n\n## Agenda\n- [x] Status Updates & Milestones\n- [ ] Upcoming Release Plan\n- [ ] Technical Debriefing\n\n## Discussion Notes\n- Outline the main points of discussion here.\n- Highlight any key challenges or milestones.\n\n## Action Items\n- [ ] **@John** - Implement the templates menu\n- [ ] **@Sarah** - Perform QA on responsive views\n- [ ] **@Alex** - Deploy the final optimized bundle`
+    },
+    {
+      name: 'Blog Post',
+      desc: 'Metadata frontmatter, styled intro, blockquote, and call-to-action',
+      content: `---\ntitle: "Unlocking Productivity with Modern Writing Engines"\ndate: "2026-08-08"\ncategory: "Technology"\ntags: ["writing", "markdown", "productivity"]\n---\n\n# Unlocking Productivity with Modern Writing Engines\n\nWriting should be distraction-free, fluid, and structured. In this post, we explore why Markdown has become the standard for modern authors and technical writers alike.\n\n## The Power of Focus\nWith distraction-free **Zen Mode** and automatic rendering, focus flows naturally.\n\n> "The simpler your tools, the clearer your thoughts."\n\n## Key Takeaways\n1. **Separation of Concerns:** Write content first, format later.\n2. **Portability:** Plaintext Markdown works everywhere.\n3. **Speed:** Keep your hands on the keyboard.\n\n---\n*Subscribe to our newsletter for more productivity insights!*`
+    }
+  ];
+
   return (
-    <div className="bg-white border-b border-slate-200 px-3 py-1.5 flex flex-wrap items-center justify-between gap-1 text-slate-600">
+    <div className="bg-white border-b border-slate-200 px-3 py-1.5 flex overflow-x-auto md:flex-wrap items-center justify-between gap-2 text-slate-600 scrollbar-none whitespace-nowrap">
       
       {/* Basic Formatting Group */}
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         
         {/* Headings */}
         <button
@@ -188,10 +209,52 @@ export const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({
         >
           <Minus className="w-4 h-4" />
         </button>
+
+        <div className="w-px h-4 bg-slate-200 mx-1 shrink-0" />
+
+        {/* Templates Dropdown Menu */}
+        <div className="relative inline-block text-left shrink-0">
+          <button
+            onClick={() => setShowTemplates(!showTemplates)}
+            className="p-1.5 hover:bg-slate-100 hover:text-purple-600 rounded flex items-center space-x-1 transition-colors text-xs font-semibold text-slate-700 bg-purple-50/50 hover:bg-purple-100/50 border border-purple-200/50 px-2 py-1"
+            title="Predefined Markdown Boilerplates"
+          >
+            <LayoutTemplate className="w-4 h-4 text-purple-600" />
+            <span className="text-purple-700 font-bold">Templates</span>
+          </button>
+
+          {showTemplates && (
+            <>
+              {/* Overlay backdrop to close */}
+              <div 
+                className="fixed inset-0 z-30" 
+                onClick={() => setShowTemplates(false)} 
+              />
+              <div className="absolute left-0 mt-1.5 w-72 bg-white border border-slate-200 rounded-xl shadow-lg z-40 p-1.5 space-y-1">
+                <div className="px-2.5 py-1.5 border-b border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Markdown Template</p>
+                </div>
+                {templates.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => {
+                      onInsertText(t.content, '');
+                      setShowTemplates(false);
+                    }}
+                    className="w-full text-left px-2.5 py-2 hover:bg-slate-50 rounded-lg transition-colors flex flex-col gap-0.5 whitespace-normal"
+                  >
+                    <span className="text-xs font-bold text-slate-800">{t.name}</span>
+                    <span className="text-[10px] text-slate-500 leading-normal">{t.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Utilities Group */}
-      <div className="flex items-center space-x-1.5">
+      <div className="flex items-center space-x-1.5 shrink-0">
         
         {/* Editor View Style Segmented Control */}
         {onChangeEditorTheme && (

@@ -56,6 +56,26 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onOpenPdfEditor,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [isMobile, setIsMobile] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+    };
+    checkMobile();
+    setShowExport(window.innerWidth >= 768);
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile && viewMode === 'split') {
+      setViewMode('editor');
+    }
+  }, [isMobile, viewMode]);
+
   const [showAiToolbar, setShowAiToolbar] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -66,20 +86,18 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [isZenMode, setIsZenMode] = useState(false);
 
   const handleToggleZenMode = () => {
-    setIsZenMode((prev) => {
-      const next = !prev;
-      if (next) {
-        setShowOutline(false);
-        setShowSpellcheck(false);
-        setShowLinterPanel(false);
-        setShowAiToolbar(false);
-        setShowSearch(false);
-        onShowToast('Zen Mode Activated', 'Distraction-free full-screen writing mode. Press Esc to exit.', 'info');
-      } else {
-        onShowToast('Exited Zen Mode', undefined, 'info');
-      }
-      return next;
-    });
+    const next = !isZenMode;
+    setIsZenMode(next);
+    if (next) {
+      setShowOutline(false);
+      setShowSpellcheck(false);
+      setShowLinterPanel(false);
+      setShowAiToolbar(false);
+      setShowSearch(false);
+      onShowToast('Zen Mode Activated', 'Distraction-free full-screen writing mode. Press Esc to exit.', 'info');
+    } else {
+      onShowToast('Exited Zen Mode', undefined, 'info');
+    }
   };
 
   // Keyboard shortcut for Esc key to exit Zen Mode
@@ -588,18 +606,20 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
             {/* iOS Segmented Control */}
             <div className="flex items-center p-1 bg-[#E3E3E8] rounded-full text-xs font-semibold shadow-inner">
-              <button
-                onClick={() => setViewMode('split')}
-                className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
-                  viewMode === 'split'
-                    ? 'bg-white text-slate-900 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Split Editor & Preview"
-              >
-                <Columns className="w-3.5 h-3.5 text-[#007AFF]" />
-                <span className="hidden sm:inline">Split</span>
-              </button>
+              {!isMobile && (
+                <button
+                  onClick={() => setViewMode('split')}
+                  className={`px-3 py-1 rounded-full flex items-center space-x-1 transition-all ${
+                    viewMode === 'split'
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Split Editor & Preview"
+                >
+                  <Columns className="w-3.5 h-3.5 text-[#007AFF]" />
+                  <span className="hidden sm:inline">Split</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setViewMode('editor')}
@@ -743,10 +763,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           <div
             className={`h-full flex flex-col border-r border-slate-200/80 overflow-y-auto ${
               viewMode === 'editor' ? 'col-span-2' : ''
-            } ${editorTheme === 'document' ? 'bg-[#F4F4F6] p-4 sm:p-6' : 'bg-white'}`}
+            } ${editorTheme === 'document' ? 'bg-[#F4F4F6] p-1.5 sm:p-6' : 'bg-white'}`}
           >
             {editorTheme === 'document' ? (
-              <div className="max-w-2xl w-full mx-auto bg-white rounded-2xl shadow-sm border border-black/5 p-6 sm:p-10 flex-1 flex flex-col transition-all min-h-[calc(100%-1rem)]">
+              <div className="max-w-2xl w-full mx-auto bg-white rounded-2xl shadow-sm border border-black/5 p-3.5 sm:p-10 flex-1 flex flex-col transition-all min-h-[calc(100%-1rem)]">
                 <div className="text-[11px] font-semibold text-[#007AFF] uppercase tracking-wider mb-2 flex items-center justify-between border-b border-black/5 pb-2">
                   <span className="flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5" />
@@ -812,6 +832,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                       ? 'prose-headings:text-[#2E2214] prose-p:text-[#433422] prose-a:text-[#007AFF]'
                       : 'prose-slate prose-headings:text-slate-900 prose-p:text-slate-800 prose-a:text-[#007AFF]'
                   }
+                  ${computedDirection === 'rtl' ? 'text-right prose-headings:text-right prose-p:text-right' : ''}
                   prose-headings:font-semibold prose-headings:tracking-tight
                   prose-h1:text-2xl prose-h1:border-b prose-h1:pb-3 prose-h1:mt-2
                   prose-h2:text-xl prose-h2:border-b prose-h2:pb-2
@@ -861,12 +882,29 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
       {/* Bottom Export Bar (Hidden in Zen Mode to minimize distraction) */}
       {!isZenMode && (
-        <div className="rounded-b-xl overflow-hidden shadow-lg border-t-0">
-          <ExportPanel
-            markdown={markdown}
-            filename={filename}
-            onShowToast={onShowToast}
-          />
+        <div className="mt-2 shrink-0">
+          <button
+            onClick={() => setShowExport(!showExport)}
+            className="w-full px-3 py-1.5 bg-slate-100/80 hover:bg-slate-200/50 rounded-lg flex items-center justify-between text-[11px] font-bold text-slate-600 transition-colors border border-slate-200/60"
+          >
+            <span className="flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-[#007AFF]" />
+              <span>Export & Local Save Options</span>
+            </span>
+            <span className="text-[10px] bg-slate-200/80 px-2 py-0.5 rounded-full font-semibold">
+              {showExport ? 'Hide ▴' : 'Show ▾'}
+            </span>
+          </button>
+          
+          {showExport && (
+            <div className="mt-1.5">
+              <ExportPanel
+                markdown={markdown}
+                filename={filename}
+                onShowToast={onShowToast}
+              />
+            </div>
+          )}
         </div>
       )}
 

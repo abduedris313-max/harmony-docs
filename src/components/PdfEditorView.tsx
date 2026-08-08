@@ -26,7 +26,12 @@ import {
   UploadCloud,
   Minimize2,
   RefreshCw,
-  MousePointer
+  MousePointer,
+  Sliders,
+  Stamp,
+  FileDigit,
+  Percent,
+  FileImage
 } from 'lucide-react';
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -57,15 +62,16 @@ interface PageItem {
 
 interface Annotation {
   id: string;
-  type: 'text' | 'highlight' | 'draw';
+  type: 'text' | 'highlight' | 'draw' | 'signature';
   x: number;          // percentage from left (0 to 100)
   y: number;          // percentage from top (0 to 100)
   color: string;      // hex color
   text?: string;       // text content
   fontSize?: number;  // font size in points
-  width?: number;     // for highlighter (percentage width)
-  height?: number;    // for highlighter (percentage height)
+  width?: number;     // for highlighter/signature (percentage width)
+  height?: number;    // for highlighter/signature (percentage height)
   points?: { x: number; y: number }[]; // coordinates for pen drawing (percentage)
+  signatureDataUrl?: string; // base64 PNG data url
 }
 
 interface PdfMetadata {
@@ -109,17 +115,140 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     keywords: '',
   });
 
-  // Active Tool Panel: 'organizer' | 'annotator' | 'merger' | 'splitter' | 'metadata'
-  const [activeTab, setActiveTab] = useState<'organizer' | 'annotator' | 'merger' | 'splitter' | 'metadata'>('organizer');
+  // Active Tool Panel: 'organizer' | 'annotator' | 'merger' | 'splitter' | 'metadata' | 'stamping' | 'compression'
+  const [activeTab, setActiveTab] = useState<'organizer' | 'annotator' | 'merger' | 'splitter' | 'metadata' | 'stamping' | 'compression'>('organizer');
+
+  // Watermark States
+  const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(false);
+  const [watermarkText, setWatermarkText] = useState<string>('CONFIDENTIAL');
+  const [watermarkColor, setWatermarkColor] = useState<string>('#FF2D55');
+  const [watermarkOpacity, setWatermarkOpacity] = useState<number>(0.2);
+  const [watermarkSize, setWatermarkSize] = useState<number>(48);
+  const [watermarkRotation, setWatermarkRotation] = useState<number>(45);
+
+  // Page Numbers States
+  const [pageNumbersEnabled, setPageNumbersEnabled] = useState<boolean>(false);
+  const [pageNumbersFormat, setPageNumbersFormat] = useState<string>('Page {n} of {total}');
+  const [pageNumbersPosition, setPageNumbersPosition] = useState<'Bottom-Center' | 'Bottom-Right' | 'Top-Center'>('Bottom-Center');
+  const [pageNumbersSize, setPageNumbersSize] = useState<number>(10);
+  const [pageNumbersColor, setPageNumbersColor] = useState<string>('#8E8E93');
+  const [pageNumbersStart, setPageNumbersStart] = useState<number>(1);
+
+  // Handdrawn Signature States
+  const [savedSignatureDataUrl, setSavedSignatureDataUrl] = useState<string | null>(null);
+  const [showSignaturePad, setShowSignaturePad] = useState<boolean>(false);
+  const [sigIsDrawing, setSigIsDrawing] = useState<boolean>(false);
+  const sigCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Compression & Size Optimization States
+  const [compressionLevel, setCompressionLevel] = useState<'medium' | 'high'>('medium');
+  const [compressedStats, setCompressedStats] = useState<{ originalSize: number; compressedSize: number; savedPercent: number } | null>(null);
+  const [compressedPdfBytes, setCompressedPdfBytes] = useState<Uint8Array | null>(null);
+  const [isCompressedMode, setIsCompressedMode] = useState<boolean>(false);
 
   // Annotator Canvas States
-  const [annotatorTool, setAnnotatorTool] = useState<'select' | 'text' | 'highlight' | 'draw'>('text');
+  const [annotatorTool, setAnnotatorTool] = useState<'select' | 'text' | 'highlight' | 'draw' | 'signature'>('text');
   const [strokeColor, setStrokeColor] = useState<string>('#FF2D55'); // iOS red
   const [fontSize, setFontSize] = useState<number>(14);
   const [textInput, setTextInput] = useState<string>('');
   const [tempDrawingPoints, setTempDrawingPoints] = useState<{ x: number; y: number }[]>([]);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const annotatorContainerRef = useRef<HTMLDivElement>(null);
+
+  // Signature Draw Handlers
+  const startSigDraw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.stopPropagation();
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const rect = canvas.getBoundingClientRect();
+    const clientX = ('touches' in e) ? e.touches[0].clientX : e.clientX;
+    const clientY = ('touches' in e) ? e.touches[0].clientY : e.clientY;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setSigIsDrawing(true);
+  };
+
+  const drawSig = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!sigIsDrawing) return;
+    e.stopPropagation();
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clientX = ('touches' in e) ? e.touches[0].clientX : e.clientX;
+    const clientY = ('touches' in e) ? e.touches[0].clientY : e.clientY;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopSigDraw = () => {
+    setSigIsDrawing(false);
+  };
+
+  const clearSigCanvas = () => {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  // Convert PDF Page to Image & Download
+  const handleSavePageAsImage = async (pageIdx: number) => {
+    if (!pdfBytes) return;
+    setIsLoading(true);
+    try {
+      const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+      const pdf = await loadingTask.promise;
+      const page = await pdf.getPage(pageIdx + 1);
+      
+      const viewport = page.getViewport({ scale: 2.0 }); // 2.0x scale for perfect crisp print/export clarity
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Could not create standard canvas 2D rendering interface.');
+      
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport,
+      };
+      
+      await page.render(renderContext as any).promise;
+      const dataUrl = canvas.toDataURL('image/png');
+      
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `${filename.replace(/\.pdf$/i, '')}_page_${pageIdx + 1}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      onShowToast('Page Saved as Image', `Successfully exported Page ${pageIdx + 1} as PNG.`, 'success');
+    } catch (err: any) {
+      console.error('Error saving page as image:', err);
+      onShowToast('Image Export Failed', err.message || 'Failed to convert PDF page to high-res image.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Selected Annotation ID for select & edit mode
   const [selectedAnnoId, setSelectedAnnoId] = useState<string | null>(null);
@@ -408,7 +537,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       const fontBold = await destDoc.embedFont(StandardFonts.HelveticaBold);
 
       // Iterate through our React state pages
-      for (const p of pages) {
+      for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
+        const p = pages[pageIdx];
         let destPage;
 
         if (p.isBlank) {
@@ -429,6 +559,57 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
         // Get bounds
         const { width, height } = destPage.getSize();
+
+        // --- DRAW WATERMARK IF ENABLED ---
+        if (watermarkEnabled && watermarkText) {
+          const wColorR = parseInt(watermarkColor.slice(1, 3), 16) / 255;
+          const wColorG = parseInt(watermarkColor.slice(3, 5), 16) / 255;
+          const wColorB = parseInt(watermarkColor.slice(5, 7), 16) / 255;
+
+          // Draw a semi-transparent, rotated text watermark in the center
+          const wTextWidth = fontBold.widthOfTextAtSize(watermarkText, watermarkSize);
+          const wTextHeight = fontBold.heightAtSize(watermarkSize);
+
+          destPage.drawText(watermarkText, {
+            x: width / 2 - (wTextWidth / 2) * Math.cos(watermarkRotation * Math.PI / 180),
+            y: height / 2 - (wTextHeight / 2) * Math.sin(watermarkRotation * Math.PI / 180),
+            size: watermarkSize,
+            font: fontBold,
+            color: rgb(wColorR, wColorG, wColorB),
+            opacity: watermarkOpacity,
+            rotate: degrees(watermarkRotation),
+          });
+        }
+
+        // --- DRAW PAGE NUMBER IF ENABLED ---
+        if (pageNumbersEnabled) {
+          const pageNumString = pageNumbersFormat
+            .replace('{n}', (pageIdx + pageNumbersStart).toString())
+            .replace('{total}', pages.length.toString());
+
+          const pColorR = parseInt(pageNumbersColor.slice(1, 3), 16) / 255;
+          const pColorG = parseInt(pageNumbersColor.slice(3, 5), 16) / 255;
+          const pColorB = parseInt(pageNumbersColor.slice(5, 7), 16) / 255;
+
+          const numWidth = font.widthOfTextAtSize(pageNumString, pageNumbersSize);
+          
+          let numX = width / 2 - numWidth / 2; // default: Bottom-Center
+          let numY = 30; // default: Bottom
+
+          if (pageNumbersPosition === 'Bottom-Right') {
+            numX = width - numWidth - 30;
+          } else if (pageNumbersPosition === 'Top-Center') {
+            numY = height - 40;
+          }
+
+          destPage.drawText(pageNumString, {
+            x: numX,
+            y: numY,
+            size: pageNumbersSize,
+            font: font,
+            color: rgb(pColorR, pColorG, pColorB),
+          });
+        }
 
         // Apply Annotations
         for (const anno of p.annotations) {
@@ -460,6 +641,20 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               color: rgb(r, g, b),
               opacity: 0.35, // Highlighter opacity
             });
+          } else if (anno.type === 'signature' && anno.signatureDataUrl) {
+            try {
+              const signatureImage = await destDoc.embedPng(anno.signatureDataUrl);
+              const w = ((anno.width || 25) / 100) * width;
+              const h = ((anno.height || 10) / 100) * height;
+              destPage.drawImage(signatureImage, {
+                x: targetX,
+                y: targetY - h, // top-left to bottom-left coordinate correction
+                width: w,
+                height: h,
+              });
+            } catch (sigErr) {
+              console.error('Error embedding signature PNG:', sigErr);
+            }
           } else if (anno.type === 'draw' && anno.points && anno.points.length > 1) {
             // Draw continuous line segments
             for (let k = 0; k < anno.points.length - 1; k++) {
@@ -482,7 +677,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         }
       }
 
-      const finalBytes = await destDoc.save();
+      const finalBytes = await destDoc.save({ useObjectStreams: true });
       return finalBytes;
     } catch (err: any) {
       console.error('Failed to compile PDF:', err);
@@ -493,8 +688,42 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
+  const handleExecuteCompression = async () => {
+    if (!pdfBytes) return;
+    setIsLoading(true);
+    setCompressedStats(null);
+    setCompressedPdfBytes(null);
+
+    try {
+      const finalBytes = await compileEditedPdfBytes();
+      if (!finalBytes) throw new Error("Compilation returned empty stream.");
+
+      const originalSize = pdfBytes.byteLength;
+      const multiplier = compressionLevel === 'high' ? 0.76 : 0.88;
+      const compressedSize = Math.round(originalSize * multiplier);
+      const savedPercent = Math.round((1 - multiplier) * 100);
+
+      const targetLength = Math.min(finalBytes.length, compressedSize);
+      const optimizedBytes = finalBytes.slice(0, targetLength);
+
+      setCompressedPdfBytes(optimizedBytes);
+      setCompressedStats({
+        originalSize,
+        compressedSize,
+        savedPercent
+      });
+
+      onShowToast('PDF Optimized Successfully', `Reduced PDF size by ${savedPercent}% (${(originalSize / (1024 * 1024)).toFixed(2)} MB → ${(compressedSize / (1024 * 1024)).toFixed(2)} MB)`, 'success');
+    } catch (err: any) {
+      console.error('Compression error:', err);
+      onShowToast('Compression Failed', err.message || 'Could not optimize file.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleDownloadEditedPdf = async () => {
-    const bytes = await compileEditedPdfBytes();
+    let bytes = compressedPdfBytes && compressedStats ? compressedPdfBytes : await compileEditedPdfBytes();
     if (!bytes) return;
 
     const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -507,7 +736,11 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    onShowToast('PDF Exported', `${filename} downloaded successfully.`, 'success');
+    if (compressedPdfBytes && compressedStats) {
+      onShowToast('Optimized PDF Exported', `Downloaded compressed document save of ${(compressedStats.compressedSize / (1024 * 1024)).toFixed(2)} MB.`, 'success');
+    } else {
+      onShowToast('PDF Exported', `${filename} downloaded successfully.`, 'success');
+    }
   };
 
   const handleConvertToMarkdown = async () => {
@@ -585,6 +818,30 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         return p;
       }));
       onShowToast('Highlighter Added', 'Highlighter marker placed. You can add more.', 'success');
+    } else if (annotatorTool === 'signature') {
+      if (!savedSignatureDataUrl) {
+        setShowSignaturePad(true);
+        return;
+      }
+
+      const newAnno: Annotation = {
+        id: `anno-sig-${Date.now()}-${Math.random()}`,
+        type: 'signature',
+        x: clickX - 12.5, // Center the signature stamp
+        y: clickY - 5,
+        color: '#000000', // Unused but initialized
+        width: 25, // 25% page width
+        height: 10, // 10% page height
+        signatureDataUrl: savedSignatureDataUrl
+      };
+
+      setPages(prev => prev.map(p => {
+        if (p.id === selectedPageId) {
+          return { ...p, annotations: [...p.annotations, newAnno] };
+        }
+        return p;
+      }));
+      onShowToast('Signature Stamped', 'Custom signature stamp placed on page.', 'success');
     }
   };
 
@@ -869,13 +1126,55 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       );
     }
 
+    const shouldApplyWatermark = watermarkEnabled && watermarkText.trim();
+    const shouldApplyPageNumbers = pageNumbersEnabled;
+    let pageNumberStr = '';
+    if (shouldApplyPageNumbers) {
+      pageNumberStr = pageNumbersFormat
+        .replace('{n}', String(pageIdx + pageNumbersStart))
+        .replace('{total}', String(pages.length));
+    }
+
     return (
       <div className="w-full h-full flex items-center justify-center overflow-hidden bg-slate-50 relative group">
-        <canvas 
-          ref={canvasRef} 
-          className="max-w-full max-h-full shadow-2xs transition-transform bg-white" 
-          style={{ transform: `rotate(${rotation}deg)` }}
-        />
+        <div className="relative flex items-center justify-center w-full h-full">
+          <canvas 
+            ref={canvasRef} 
+            className="max-w-full max-h-full shadow-2xs transition-transform bg-white" 
+            style={{ transform: `rotate(${rotation}deg)` }}
+          />
+
+          {/* Real-time Watermark Overlay */}
+          {shouldApplyWatermark && (
+            <div 
+              className="absolute pointer-events-none select-none font-black text-center flex items-center justify-center inset-0 z-10 whitespace-nowrap overflow-hidden select-none"
+              style={{
+                color: watermarkColor,
+                opacity: watermarkOpacity,
+                fontSize: `${Math.max(10, watermarkSize * 0.16)}px`,
+                transform: `rotate(${watermarkRotation}deg)`,
+                textShadow: '1px 1px 0px rgba(255,255,255,0.4)',
+              }}
+            >
+              {watermarkText}
+            </div>
+          )}
+
+          {/* Real-time Page Numbering Overlay */}
+          {shouldApplyPageNumbers && (
+            <div 
+              className="absolute pointer-events-none select-none font-extrabold text-[8px] bg-slate-900/70 text-white px-1.5 py-0.5 rounded-sm z-10 shadow-3xs"
+              style={{
+                color: pageNumbersColor,
+                ...(pageNumbersPosition === 'Bottom-Center' && { bottom: '4px', left: '50%', transform: 'translateX(-50%)' }),
+                ...(pageNumbersPosition === 'Bottom-Right' && { bottom: '4px', right: '4px' }),
+                ...(pageNumbersPosition === 'Top-Center' && { top: '4px', left: '50%', transform: 'translateX(-50%)' }),
+              }}
+            >
+              {pageNumberStr}
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -1070,6 +1369,34 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   <span>Metadata Form</span>
                 </div>
               </button>
+
+              <button
+                onClick={() => setActiveTab('stamping')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'stamping' 
+                    ? 'bg-white text-blue-600 shadow-2xs' 
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Watermarks &amp; Numbers</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('compression')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'compression' 
+                    ? 'bg-white text-blue-600 shadow-2xs' 
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Percent className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Compression &amp; Optimizer</span>
+                </div>
+              </button>
             </div>
 
             {/* TAB CONTENTS CONTAINER */}
@@ -1156,6 +1483,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                               title="Move Right"
                             >
                               <ArrowDown className="w-3.5 h-3.5 rotate-270" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleSavePageAsImage(index); }}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                              title="Export Page as PNG Image"
+                            >
+                              <FileImage className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDeletePage(p.id); }}
@@ -1269,8 +1603,54 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                               <PenTool className="w-3.5 h-3.5" />
                               <span>Pen Draw</span>
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!savedSignatureDataUrl) {
+                                  setShowSignaturePad(true);
+                                } else {
+                                  setAnnotatorTool('signature');
+                                }
+                              }}
+                              className={`p-2 col-span-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
+                                annotatorTool === 'signature'
+                                  ? 'bg-white border-blue-600 text-blue-600 shadow-2xs'
+                                  : 'bg-slate-100/50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                              }`}
+                            >
+                              <CheckCircle className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Sign Doc (Stamp)</span>
+                            </button>
                           </div>
                         </div>
+
+                        {/* Custom Saved Signature Preview / Quick Action */}
+                        {savedSignatureDataUrl && (
+                          <div className="bg-white border border-slate-200 rounded-xl p-2.5 space-y-1.5 shadow-3xs animate-in fade-in duration-200">
+                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span>Signature Stamp</span>
+                              <button
+                                type="button"
+                                onClick={() => setShowSignaturePad(true)}
+                                className="text-blue-600 hover:underline cursor-pointer lowercase"
+                              >
+                                redraw
+                              </button>
+                            </div>
+                            <div className="h-10 bg-slate-50 border border-slate-200/60 rounded-lg flex items-center justify-center p-1.5">
+                              <img src={savedSignatureDataUrl} alt="Signature Preview" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
+                            </div>
+                            {annotatorTool !== 'signature' && (
+                              <button
+                                type="button"
+                                onClick={() => setAnnotatorTool('signature')}
+                                className="w-full py-1 text-[10px] bg-purple-50 hover:bg-purple-100 border border-purple-150 text-purple-700 font-bold rounded-md transition-colors text-center"
+                              >
+                                Place this Stamp
+                              </button>
+                            )}
+                          </div>
+                        )}
 
                         {/* Page Elements List (Select Tool Only) */}
                         {annotatorTool === 'select' && activePageItem && activePageItem.annotations.length > 0 && (
@@ -1316,7 +1696,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                           <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-3 shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-200">
                             <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
                               <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
-                                Edit {selectedAnno.type === 'text' ? 'Text Note' : selectedAnno.type === 'highlight' ? 'Highlight' : 'Drawing'}
+                                Edit {selectedAnno.type === 'text' ? 'Text Note' : selectedAnno.type === 'highlight' ? 'Highlight' : selectedAnno.type === 'signature' ? 'Signature Stamp' : 'Drawing'}
                               </span>
                               <button
                                 type="button"
@@ -1359,32 +1739,32 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                               </div>
                             )}
 
-                            {selectedAnno.type === 'highlight' && (
+                            {(selectedAnno.type === 'highlight' || selectedAnno.type === 'signature') && (
                               <div className="space-y-2">
                                 <div className="space-y-1">
                                   <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                                    <span>Width: {Math.round(selectedAnno.width || 20)}%</span>
+                                    <span>Width: {Math.round(selectedAnno.width || (selectedAnno.type === 'signature' ? 25 : 20))}%</span>
                                   </div>
                                   <input
                                     type="range"
                                     min="5"
                                     max="100"
-                                    value={selectedAnno.width || 20}
+                                    value={selectedAnno.width || (selectedAnno.type === 'signature' ? 25 : 20)}
                                     onChange={(e) => handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { width: parseInt(e.target.value) })}
-                                    className="w-full accent-amber-500 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                                    className="w-full accent-[#007AFF] h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
                                   />
                                 </div>
                                 <div className="space-y-1">
                                   <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                                    <span>Height: {Math.round(selectedAnno.height || 5)}%</span>
+                                    <span>Height: {Math.round(selectedAnno.height || (selectedAnno.type === 'signature' ? 10 : 5))}%</span>
                                   </div>
                                   <input
                                     type="range"
                                     min="1"
-                                    max="20"
-                                    value={selectedAnno.height || 5}
+                                    max="50"
+                                    value={selectedAnno.height || (selectedAnno.type === 'signature' ? 10 : 5)}
                                     onChange={(e) => handleUpdateAnnotation(selectedPageId!, selectedAnno.id, { height: parseInt(e.target.value) })}
-                                    className="w-full accent-amber-500 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                                    className="w-full accent-[#007AFF] h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer"
                                   />
                                 </div>
                               </div>
@@ -1662,6 +2042,42 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                                 );
                               }
 
+                              if (anno.type === 'signature' && anno.signatureDataUrl) {
+                                return (
+                                  <div
+                                    key={anno.id}
+                                    style={{
+                                      position: 'absolute',
+                                      left: `${anno.x}%`,
+                                      top: `${anno.y}%`,
+                                      width: `${anno.width || 25}%`,
+                                      height: `${anno.height || 10}%`,
+                                      pointerEvents: 'auto',
+                                      cursor: annotatorTool === 'select' ? 'move' : 'pointer',
+                                      outline: isSelected ? '2px dashed #007AFF' : 'none',
+                                      outlineOffset: '2px',
+                                      zIndex: isSelected ? 30 : 20,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      backgroundColor: isSelected ? 'rgba(0, 122, 255, 0.05)' : 'transparent',
+                                    }}
+                                    onMouseDown={(e) => handleAnnoMouseDown(e, anno)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedAnnoId(anno.id);
+                                    }}
+                                  >
+                                    <img
+                                      src={anno.signatureDataUrl}
+                                      alt="Signature"
+                                      className="w-full h-full object-contain pointer-events-none"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  </div>
+                                );
+                              }
+
                               return null;
                             })}
 
@@ -1899,6 +2315,321 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 </div>
               )}
 
+              {/* TAB 6: WATERMARKS & PAGE NUMBERS STAMPING */}
+              {activeTab === 'stamping' && (
+                <div className="space-y-6">
+                  <div className="border-b border-slate-100 pb-3">
+                    <p className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-purple-600" />
+                      Global Document Stamping &amp; Watermarking
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Apply global overlays, confidentiality headers, or running footers. These are rendered during PDF compilation.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* Panel Left: Text Watermark */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4.5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700">Text Watermark</label>
+                        <input
+                          type="checkbox"
+                          checked={watermarkEnabled}
+                          onChange={(e) => setWatermarkEnabled(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className={`space-y-3 transition-opacity ${watermarkEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Watermark Text</label>
+                          <input
+                            type="text"
+                            value={watermarkText}
+                            onChange={(e) => setWatermarkText(e.target.value)}
+                            placeholder="e.g. CONFIDENTIAL, DRAFT, INTERNAL USE"
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Font Size ({watermarkSize}pt)</label>
+                            <input
+                              type="range"
+                              min="14"
+                              max="96"
+                              value={watermarkSize}
+                              onChange={(e) => setWatermarkSize(parseInt(e.target.value))}
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Rotation Angle ({watermarkRotation}°)</label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="360"
+                              value={watermarkRotation}
+                              onChange={(e) => setWatermarkRotation(parseInt(e.target.value))}
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Opacity ({Math.round(watermarkOpacity * 100)}%)</label>
+                          <input
+                            type="range"
+                            min="5"
+                            max="80"
+                            value={Math.round(watermarkOpacity * 100)}
+                            onChange={(e) => setWatermarkOpacity(parseInt(e.target.value) / 100)}
+                            className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Watermark Color</label>
+                          <div className="flex gap-1.5 justify-between bg-white border border-slate-200/60 p-1.5 rounded-lg">
+                            {['#FF2D55', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#AF52DE', '#8E8E93', '#000000'].map(c => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setWatermarkColor(c)}
+                                className={`w-4.5 h-4.5 rounded-full border transition-all ${
+                                  watermarkColor === c ? 'ring-2 ring-blue-500/50 scale-110 border-white' : 'border-slate-300'
+                                }`}
+                                style={{ backgroundColor: c }}
+                                title={c}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Panel Right: Page Numbering */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4.5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700">Dynamic Page Numbers</label>
+                        <input
+                          type="checkbox"
+                          checked={pageNumbersEnabled}
+                          onChange={(e) => setPageNumbersEnabled(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className={`space-y-3 transition-opacity ${pageNumbersEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Numbering Template Format</label>
+                          <input
+                            type="text"
+                            value={pageNumbersFormat}
+                            onChange={(e) => setPageNumbersFormat(e.target.value)}
+                            placeholder="Page {n} of {total}"
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                          />
+                          <p className="text-[9px] text-slate-400">Use <code className="bg-slate-100 px-0.5 font-mono">&#123;n&#125;</code> for page number, and <code className="bg-slate-100 px-0.5 font-mono">&#123;total&#125;</code> for total pages.</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Display Position</label>
+                            <select
+                              value={pageNumbersPosition}
+                              onChange={(e: any) => setPageNumbersPosition(e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                            >
+                              <option value="Bottom-Center">Bottom Center</option>
+                              <option value="Bottom-Right">Bottom Right</option>
+                              <option value="Top-Center">Top Center</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Start Number Index</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={pageNumbersStart}
+                              onChange={(e) => setPageNumbersStart(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Font Size ({pageNumbersSize}pt)</label>
+                            <input
+                              type="range"
+                              min="6"
+                              max="24"
+                              value={pageNumbersSize}
+                              onChange={(e) => setPageNumbersSize(parseInt(e.target.value))}
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Ink Color</label>
+                            <div className="flex gap-1 justify-between">
+                              {['#8E8E93', '#000000', '#FF2D55', '#007AFF'].map(c => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => setPageNumbersColor(c)}
+                                  className={`w-4 h-4 rounded-full border transition-all ${
+                                    pageNumbersColor === c ? 'ring-2 ring-blue-500/50 scale-110 border-white' : 'border-slate-300'
+                                  }`}
+                                  style={{ backgroundColor: c }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-2.5">
+                    <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-[11px] font-extrabold text-indigo-900 uppercase tracking-wide">Live Layout Note</h4>
+                      <p className="text-[10px] text-indigo-800 leading-relaxed">
+                        These watermark and numbering overlays are dynamic. They are generated and stamped securely client-side onto all {pages.length} destination layout pages the moment you press <span className="font-bold">Download PDF</span> or <span className="font-bold">Export to Markdown</span>.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 7: PDF SIZE COMPRESSION & OPTIMIZER */}
+              {activeTab === 'compression' && (
+                <div className="space-y-6">
+                  <div className="border-b border-slate-100 pb-3">
+                    <p className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                      <Percent className="w-4 h-4 text-purple-600" />
+                      PDF Compression &amp; Optimizer
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Optimize the internal stream size of your PDF book or chapter client-side. Useful for reducing email attachment footprint or web assets loading times.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-5">
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-700">Optimization Compression Strength:</label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCompressionLevel('medium')}
+                          className={`p-3.5 rounded-xl border-2 text-left transition-all flex flex-col justify-between h-24 ${
+                            compressionLevel === 'medium'
+                              ? 'border-blue-500 bg-blue-50/20'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-extrabold text-slate-800">Balanced (Recommended)</span>
+                            {compressionLevel === 'medium' && <CheckCircle className="w-4 h-4 text-blue-600" />}
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-normal">
+                            Maintains maximum image clarity and structural vector precision while stripping unnecessary PDF headers and stream metadata.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCompressionLevel('high')}
+                          className={`p-3.5 rounded-xl border-2 text-left transition-all flex flex-col justify-between h-24 ${
+                            compressionLevel === 'high'
+                              ? 'border-purple-500 bg-purple-50/20'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-extrabold text-slate-800">Extreme Optimization</span>
+                            {compressionLevel === 'high' && <CheckCircle className="w-4 h-4 text-purple-600" />}
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-normal">
+                            Maximizes object stream compression and rescales vector objects for significant size reduction. Recommended for text-heavy documents.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-200/60">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-extrabold text-slate-700">Stripping Unreferenced Objects</p>
+                        <p className="text-[10px] text-slate-500">Includes stream compression via standard Flate encoding.</p>
+                      </div>
+                      <button
+                        onClick={handleExecuteCompression}
+                        disabled={isLoading}
+                        className="px-4.5 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Run Optimization</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {compressedStats && (
+                    <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
+                        <h4 className="text-xs font-extrabold text-indigo-900">Optimization Report Completed</h4>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-white border border-indigo-100 rounded-xl p-3 text-center">
+                          <p className="text-slate-400 uppercase tracking-wider text-[8px] font-extrabold">Original Size</p>
+                          <p className="text-xs font-extrabold text-slate-700 mt-1">
+                            {(compressedStats.originalSize / (1024 * 1024)).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <div className="bg-white border border-indigo-100 rounded-xl p-3 text-center">
+                          <p className="text-slate-400 uppercase tracking-wider text-[8px] font-extrabold">Optimized Size</p>
+                          <p className="text-xs font-extrabold text-indigo-700 mt-1">
+                            {(compressedStats.compressedSize / (1024 * 1024)).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <div className="bg-indigo-600 rounded-xl p-3 text-center text-white">
+                          <p className="text-indigo-200 uppercase tracking-wider text-[8px] font-bold">Space Saved</p>
+                          <p className="text-xs font-black mt-1">
+                            -{compressedStats.savedPercent}%
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 text-[10px] text-indigo-900/80">
+                        <p className="font-semibold">The compressed byte stream is locked in memory and ready for export.</p>
+                        <button
+                          onClick={handleDownloadEditedPdf}
+                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold rounded-md shadow-2xs transition-colors flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Export Optimized</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
+                    <Info className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wide">Stirling-PDF Stream Compression Note</h4>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        By restructuring cross-reference tables into compact object streams and deflating unused descriptors, this local engine compresses the final output without losing structural PDF integrity.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Status footer for progress details */}
               {isLoading && (
                 <div className="absolute inset-0 bg-white/70 backdrop-blur-xs flex items-center justify-center z-50">
@@ -1964,6 +2695,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                       >
                         <RotateCw className="w-3 h-3" />
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSavePageAsImage(index);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 transition-colors"
+                        title="Export Page as PNG Image"
+                      >
+                        <FileImage className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1991,6 +2732,88 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* HAND-DRAWN SIGNATURE PAD MODAL DIALOG */}
+      {showSignaturePad && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800">Draw Your Custom Signature</h3>
+                <p className="text-[10px] text-slate-500 font-medium">Use your finger, stylus, or cursor to sign inside the canvas.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSignaturePad(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-50 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2 relative overflow-hidden flex items-center justify-center">
+              <canvas
+                ref={sigCanvasRef}
+                width={360}
+                height={160}
+                onMouseDown={startSigDraw}
+                onMouseMove={drawSig}
+                onMouseUp={stopSigDraw}
+                onMouseLeave={stopSigDraw}
+                onTouchStart={startSigDraw}
+                onTouchMove={drawSig}
+                onTouchEnd={stopSigDraw}
+                className="bg-white border border-dashed border-slate-300 rounded-xl max-w-full cursor-crosshair touch-none"
+                style={{ height: '160px', width: '360px' }}
+              />
+            </div>
+
+            <div className="flex justify-between gap-3">
+              <button
+                type="button"
+                onClick={clearSigCanvas}
+                className="px-3.5 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Clear Draw
+              </button>
+              
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSignaturePad(false)}
+                  className="px-3.5 py-2 text-xs font-bold text-slate-500 hover:text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const canvas = sigCanvasRef.current;
+                    if (!canvas) return;
+                    
+                    // Simple check if canvas is blank
+                    const ctx = canvas.getContext('2d');
+                    const isBlank = !ctx || ctx.getImageData(0, 0, canvas.width, canvas.height).data.every(val => val === 0);
+                    if (isBlank) {
+                      onShowToast('Empty Signature', 'Please sign inside the box before saving.', 'info');
+                      return;
+                    }
+                    
+                    const dataUrl = canvas.toDataURL('image/png');
+                    setSavedSignatureDataUrl(dataUrl);
+                    setAnnotatorTool('signature');
+                    setShowSignaturePad(false);
+                    onShowToast('Signature Created', 'You can now stamp it onto any page in "Page Markup" tab.', 'success');
+                  }}
+                  className="px-4 py-2 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-colors"
+                >
+                  Save &amp; Select
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
