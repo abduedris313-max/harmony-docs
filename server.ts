@@ -101,7 +101,7 @@ Provide a complete, well-formatted, readable Markdown document representation of
       };
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents: { parts: [pdfPart, textPart] },
         config: {
           systemInstruction: systemPrompt,
@@ -165,6 +165,82 @@ Provide a complete, well-formatted, readable Markdown document representation of
   }
 });
 
+// Generate bulleted Key Takeaways Summary endpoint
+app.post("/api/generate-summary", async (req, res) => {
+  try {
+    const {
+      markdown,
+      bulletCount = 4,
+      style = "bulleted",
+      focusArea = "general",
+      customInstructions = "",
+    } = req.body;
+
+    if (!markdown || !markdown.trim()) {
+      return res.status(400).json({ error: "No Markdown content provided." });
+    }
+
+    let styleInstruction = "";
+    switch (style) {
+      case "executive":
+        styleInstruction = "High-level strategic executive summary with high-impact findings, business or organizational implications, and core metrics.";
+        break;
+      case "actionable":
+        styleInstruction = "Action-oriented takeaways focusing on key recommendations, actionable steps, next milestones, and practical conclusions.";
+        break;
+      case "technical":
+        styleInstruction = "Deep technical takeaways highlighting architecture, specifications, technical methodology, and quantitative findings.";
+        break;
+      case "concise":
+        styleInstruction = "Ultra-concise, punchy bullet points capturing the absolute core essence in minimal words.";
+        break;
+      default:
+        styleInstruction = "Comprehensive, balanced takeaways highlighting the main concepts, findings, and takeaways.";
+    }
+
+    const systemPrompt = `You are a world-class AI document analyst and synthesiser specializing in distilling complex documents into crisp, impactful, and scannable 'Key Takeaways' sections in Markdown.
+
+Your task:
+Analyze the provided Markdown document and generate a pristine '## Key Takeaways' section.
+
+Rules:
+1. Begin immediately with the heading: ## Key Takeaways
+2. Generate approximately ${bulletCount} distinct bullet points.
+3. Each bullet point MUST start with a bold category or theme tag followed by a colon and a clear, substantive synthesis statement.
+   Example format:
+   - **[Core Finding/Topic]**: [Insightful and specific synthesis of the document's point]
+4. Emphasize key facts, metrics, decisions, conclusions, or critical arguments.
+5. Tone & Style: ${styleInstruction}
+${focusArea && focusArea !== "general" ? `6. Specific Focus Area: ${focusArea}` : ""}
+${customInstructions ? `7. Additional Instructions: ${customInstructions}` : ""}
+8. Output ONLY the raw Markdown block (starting with ## Key Takeaways). Do not add preamble, greeting, or conversational introductory text.`;
+
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: [
+        { text: `Synthesize this document into a bulleted Key Takeaways section:\n\n${markdown}` },
+      ],
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.25,
+      },
+    });
+
+    const keyTakeawaysMarkdown = response.text || "";
+
+    res.json({
+      success: true,
+      takeawaysMarkdown: keyTakeawaysMarkdown,
+    });
+  } catch (error: any) {
+    console.error("Error in /api/generate-summary:", error);
+    res.status(500).json({
+      error: error.message || "Failed to generate Key Takeaways summary with AI.",
+    });
+  }
+});
+
 // Refine or format existing Markdown endpoint
 app.post("/api/refine-markdown", async (req, res) => {
   try {
@@ -201,7 +277,7 @@ app.post("/api/refine-markdown", async (req, res) => {
     const ai = getGeminiClient();
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: [
         { text: prompt },
         { text: `--- DOCUMENT START ---\n${markdown}\n--- DOCUMENT END ---` },

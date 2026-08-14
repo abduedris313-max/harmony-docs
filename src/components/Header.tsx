@@ -22,7 +22,8 @@ import {
   HardDrive,
   Edit3,
   Plus,
-  FileUp
+  FileUp,
+  Flame,
 } from 'lucide-react';
 import { marked } from 'marked';
 
@@ -30,6 +31,8 @@ interface HeaderProps {
   onOpenHistory: () => void;
   onOpenVersionHistory: () => void;
   onOpenCloudStorage: () => void;
+  onOpenFirebaseSync?: () => void;
+  firebaseUser?: any;
   onOpenBookLibrary?: () => void;
   onOpenScanner?: () => void;
   onOpenLocalFileManager?: () => void;
@@ -54,6 +57,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHistory,
   onOpenVersionHistory,
   onOpenCloudStorage,
+  onOpenFirebaseSync,
+  firebaseUser,
   onOpenBookLibrary,
   onOpenScanner,
   onOpenLocalFileManager,
@@ -392,6 +397,25 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
+          {/* Firebase Cloud Sync Button */}
+          {onOpenFirebaseSync && (
+            <button
+              onClick={onOpenFirebaseSync}
+              className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all flex items-center space-x-1.5 shadow-3xs border ${
+                firebaseUser
+                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Firebase Cloud Database & Sync"
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+              <span>{firebaseUser ? (firebaseUser.displayName?.split(' ')[0] || 'Firebase') : 'Firebase'}</span>
+              {firebaseUser && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse" />
+              )}
+            </button>
+          )}
+
           {/* Cloud Storage Button */}
           <button
             onClick={onOpenCloudStorage}
@@ -715,19 +739,25 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              <button
-                onClick={() => {
-                  onOpenCloudStorage();
-                  setIsMobileMenuOpen(false);
-                }}
-                className="p-3 rounded-2xl bg-blue-50 text-[#007AFF] flex items-center justify-between hover:bg-blue-100 transition-all border border-blue-100"
-              >
-                <div className="flex items-center space-x-2.5">
-                  <Cloud className="w-4 h-4" />
-                  <span className="text-xs font-bold">Cloud Drive</span>
-                </div>
-                <ChevronRight className="w-3.5 h-3.5 text-blue-400" />
-              </button>
+              {onOpenFirebaseSync && (
+                <button
+                  onClick={() => {
+                    onOpenFirebaseSync();
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="p-3 rounded-2xl bg-amber-50 text-amber-900 flex items-center justify-between hover:bg-amber-100 transition-all border border-amber-200"
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <Flame className="w-4 h-4 text-amber-500 fill-amber-500" />
+                    <span className="text-xs font-bold">Firebase</span>
+                  </div>
+                  {firebaseUser ? (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-amber-400" />
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Version & History List Items */}

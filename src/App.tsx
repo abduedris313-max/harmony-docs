@@ -13,6 +13,7 @@ import { BookReaderModal } from './components/BookReaderModal';
 import { DocumentCrudModal } from './components/DocumentCrudModal';
 import { DirectoryScannerModal } from './components/DirectoryScannerModal';
 import { LocalFileManagerModal } from './components/LocalFileManagerModal';
+import { FirebaseSyncModal } from './components/FirebaseSyncModal';
 import { ToastContainer } from './components/Toast';
 import { ConversionOptions, HistoryItem, ToastMessage, AiAction, VersionSnapshot, Book, Bookmark, BookShelf, DocumentFolder, DirectoryScanItem, LibraryBackup } from './types';
 import { SAMPLE_PDFS, SamplePdf } from './data/samplePdfs';
@@ -20,6 +21,8 @@ import { INITIAL_BOOKS } from './data/sampleBooks';
 import { extractTextFromPdfArrayBuffer } from './utils/browserPdfParser';
 import { registerServiceWorker, subscribeToOnlineStatus } from './utils/offlineManager';
 import { saveToOfflineStore, getAllFromOfflineStore, removeFromOfflineStore } from './utils/indexedDBStorage';
+import { subscribeToAuth, subscribeToUserBooks, subscribeToUserFolders, saveBookToFirestore, deleteBookFromFirestore, saveFolderToFirestore, deleteFolderFromFirestore } from './firebase/firebaseService';
+import { User } from 'firebase/auth';
 
 const STORAGE_KEY = 'pdf_to_md_history_v1';
 const SNAPSHOTS_KEY = 'pdf_to_md_snapshots_v1';
@@ -68,6 +71,46 @@ export default function App() {
   const [selectedBookToEdit, setSelectedBookToEdit] = useState<Book | undefined>(undefined);
   const [isDirectoryScannerOpen, setIsDirectoryScannerOpen] = useState<boolean>(false);
   const [isLocalFileManagerOpen, setIsLocalFileManagerOpen] = useState<boolean>(false);
+  const [isFirebaseSyncOpen, setIsFirebaseSyncOpen] = useState<boolean>(false);
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+
+  // Subscribe to Firebase Auth and Firestore User collections
+  useEffect(() => {
+    const unsubAuth = subscribeToAuth((user) => {
+      setFirebaseUser(user);
+    });
+    return () => unsubAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    const unsubBooks = subscribeToUserBooks(firebaseUser.uid, (cloudBooks) => {
+      if (cloudBooks && cloudBooks.length > 0) {
+        setBooks((prev) => {
+          const map = new Map<string, Book>();
+          prev.forEach((b) => map.set(b.id, b));
+          cloudBooks.forEach((cb) => map.set(cb.id, cb));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubFolders = subscribeToUserFolders(firebaseUser.uid, (cloudFolders) => {
+      if (cloudFolders && cloudFolders.length > 0) {
+        setFolders((prev) => {
+          const map = new Map<string, DocumentFolder>();
+          prev.forEach((f) => map.set(f.id, f));
+          cloudFolders.forEach((cf) => map.set(cf.id, cf));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    return () => {
+      unsubBooks();
+      unsubFolders();
+    };
+  }, [firebaseUser]);
 
   // Initialize PWA Service Worker & Online Listener
   useEffect(() => {
@@ -601,6 +644,9 @@ export default function App() {
   const handleDeleteBook = (bookId: string) => {
     if (window.confirm('Remove this book from your library collection?')) {
       setBooks((prev) => prev.filter((b) => b.id !== bookId));
+      if (firebaseUser) {
+        deleteBookFromFirestore(firebaseUser.uid, bookId).catch(console.error);
+      }
       showToast('Book Deleted', 'Removed book from collection');
     }
   };
@@ -648,6 +694,9 @@ export default function App() {
       createdAt: Date.now(),
     };
     setFolders((prev) => [...prev, newFolder]);
+    if (firebaseUser) {
+      saveFolderToFirestore(firebaseUser.uid, newFolder).catch(console.error);
+    }
     showToast('Folder Created', `Created "${folderName}"`);
   };
 
@@ -655,6 +704,9 @@ export default function App() {
     setFolders((prev) => prev.filter((f) => f.id !== folderId));
     // Remove folder association from books
     setBooks((prev) => prev.map((b) => (b.folderId === folderId ? { ...b, folderId: undefined } : b)));
+    if (firebaseUser) {
+      deleteFolderFromFirestore(firebaseUser.uid, folderId).catch(console.error);
+    }
     showToast('Folder Removed', 'Folder deleted');
   };
 
@@ -686,6 +738,9 @@ export default function App() {
       const updatedBook = bookData as Book;
       setBooks((prev) => prev.map((b) => (b.id === updatedBook.id ? updatedBook : b)));
       saveToOfflineStore('books', updatedBook);
+      if (firebaseUser) {
+        saveBookToFirestore(firebaseUser.uid, updatedBook).catch(console.error);
+      }
       showToast('Document Details Updated', updatedBook.title);
     } else {
       // CREATE
@@ -720,6 +775,9 @@ export default function App() {
 
       setBooks((prev) => [newBook, ...prev]);
       saveToOfflineStore('books', newBook);
+      if (firebaseUser) {
+        saveBookToFirestore(firebaseUser.uid, newBook).catch(console.error);
+      }
       showToast('Document Created', `Successfully added ${newBook.title}`);
     }
   };
@@ -866,6 +924,8 @@ export default function App() {
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
         onOpenCloudStorage={() => setIsCloudModalOpen(true)}
+        onOpenFirebaseSync={() => setIsFirebaseSyncOpen(true)}
+        firebaseUser={firebaseUser}
         onOpenBookLibrary={() => setCurrentView('library')}
         onOpenScanner={() => setIsDirectoryScannerOpen(true)}
         onOpenLocalFileManager={() => setIsLocalFileManagerOpen(true)}
@@ -937,6 +997,9 @@ export default function App() {
             lastAutoSaveTime={lastAutoSaveTime}
             onOpenBookLibrary={() => setCurrentView('library')}
             onOpenPdfEditor={() => setCurrentView('pdf-editor')}
+            options={options}
+            setOptions={setOptions}
+            onOpenSettings={() => setIsSettingsOpen(true)}
           />
         )}
 
@@ -1039,6 +1102,17 @@ export default function App() {
         currentFilename={activeFilename}
         onLoadPdfFromCloud={handleLoadPdfFromCloud}
         onLoadMarkdownFromCloud={handleLoadMarkdownFromCloud}
+        onShowToast={showToast}
+      />
+
+      {/* Firebase Cloud Firestore & Auth Sync Modal */}
+      <FirebaseSyncModal
+        isOpen={isFirebaseSyncOpen}
+        onClose={() => setIsFirebaseSyncOpen(false)}
+        books={books}
+        folders={folders}
+        history={history}
+        snapshots={snapshots}
         onShowToast={showToast}
       />
 

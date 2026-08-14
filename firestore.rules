@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation for Book entity
+    function isValidBook(data, userId) {
+      return data.id is string && isValidId(data.id) &&
+        data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
+        data.content is string && data.content.size() <= 1000000 &&
+        (!('author' in data) || (data.author is string && data.author.size() <= 200)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+        (!('shelf' in data) || (data.shelf in ['Currently Reading', 'To Read', 'Completed', 'Favorites', 'Technical', 'Classics'])) &&
+        (!('coverColor' in data) || (data.coverColor is string && data.coverColor.size() <= 30)) &&
+        (!('progressPercent' in data) || (data.progressPercent is number && data.progressPercent >= 0 && data.progressPercent <= 100)) &&
+        (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
+        (!('wordCount' in data) || (data.wordCount is number && data.wordCount >= 0)) &&
+        (!('folderId' in data) || (data.folderId is string && isValidId(data.folderId)));
+    }
+
+    // Validation for DocumentFolder entity
+    function isValidFolder(data, userId) {
+      return data.id is string && isValidId(data.id) &&
+        data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
+        (!('color' in data) || (data.color is string && data.color.size() <= 30)) &&
+        (!('createdAt' in data) || data.createdAt is number);
+    }
+
+    // Validation for HistoryItem entity
+    function isValidHistoryItem(data, userId) {
+      return data.id is string && isValidId(data.id) &&
+        data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+        data.filename is string && data.filename.size() > 0 && data.filename.size() <= 300 &&
+        data.markdown is string && data.markdown.size() <= 1000000 &&
+        (!('timestamp' in data) || data.timestamp is number) &&
+        (!('fileSizeBytes' in data) || (data.fileSizeBytes is number && data.fileSizeBytes >= 0)) &&
+        (!('wordCount' in data) || (data.wordCount is number && data.wordCount >= 0));
+    }
+
+    // Validation for VersionSnapshot entity
+    function isValidSnapshot(data, userId) {
+      return data.id is string && isValidId(data.id) &&
+        data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+        data.label is string && data.label.size() > 0 && data.label.size() <= 200 &&
+        data.markdown is string && data.markdown.size() <= 1000000 &&
+        (!('timestamp' in data) || data.timestamp is number) &&
+        (!('wordCount' in data) || (data.wordCount is number && data.wordCount >= 0)) &&
+        (!('charCount' in data) || (data.charCount is number && data.charCount >= 0)) &&
+        (!('isAutoSave' in data) || data.isAutoSave is bool);
+    }
+
+    // User Subcollections - ABAC Zero-Trust Rules
+    match /users/{userId} {
+      allow get, write: if isOwner(userId);
+
+      // Book Library Subcollection
+      match /books/{bookId} {
+        allow get: if isOwner(userId) && isValidId(bookId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(bookId) && isValidBook(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(bookId) &&
+          isValidBook(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().id == existing().id;
+        allow delete: if isOwner(userId) && isValidId(bookId);
+      }
+
+      // Folders Subcollection
+      match /folders/{folderId} {
+        allow get: if isOwner(userId) && isValidId(folderId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(folderId) && isValidFolder(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(folderId) &&
+          isValidFolder(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().id == existing().id;
+        allow delete: if isOwner(userId) && isValidId(folderId);
+      }
+
+      // History Subcollection
+      match /history/{historyId} {
+        allow get: if isOwner(userId) && isValidId(historyId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(historyId) && isValidHistoryItem(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(historyId) &&
+          isValidHistoryItem(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().id == existing().id;
+        allow delete: if isOwner(userId) && isValidId(historyId);
+      }
+
+      // Version Snapshots Subcollection
+      match /snapshots/{snapshotId} {
+        allow get: if isOwner(userId) && isValidId(snapshotId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(snapshotId) && isValidSnapshot(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(snapshotId) &&
+          isValidSnapshot(incoming(), userId) &&
+          incoming().userId == existing().userId &&
+          incoming().id == existing().id;
+        allow delete: if isOwner(userId) && isValidId(snapshotId);
+      }
+    }
+  }
+}

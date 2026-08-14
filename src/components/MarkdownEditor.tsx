@@ -27,8 +27,11 @@ import { SpellcheckPanel } from './SpellcheckPanel';
 import { detectTyposInMarkdown, TypoItem } from '../utils/spellchecker';
 import { MarkdownLinterPanel } from './MarkdownLinterPanel';
 import { lintMarkdownSyntax, fixAllMarkdownIssues, MarkdownIssue } from '../utils/markdownLinter';
-import { ViewMode, AiAction, DocumentStats } from '../types';
+import { AiSummaryModal } from './AiSummaryModal';
+import { insertTakeawaysIntoMarkdown } from '../utils/summaryHelper';
+import { ViewMode, AiAction, DocumentStats, ConversionOptions } from '../types';
 import { renderMarkdownToHtml } from '../utils/markdownParser';
+import { formatMarkdownDocument } from '../utils/markdownFormatter';
 
 interface MarkdownEditorProps {
   markdown: string;
@@ -41,6 +44,9 @@ interface MarkdownEditorProps {
   lastAutoSaveTime?: number | null;
   onOpenBookLibrary?: () => void;
   onOpenPdfEditor?: () => void;
+  options?: ConversionOptions;
+  setOptions?: React.Dispatch<React.SetStateAction<ConversionOptions>>;
+  onOpenSettings?: () => void;
 }
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
@@ -54,6 +60,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   lastAutoSaveTime,
   onOpenBookLibrary,
   onOpenPdfEditor,
+  options,
+  setOptions,
+  onOpenSettings,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [isMobile, setIsMobile] = useState(false);
@@ -77,6 +86,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   }, [isMobile, viewMode]);
 
   const [showAiToolbar, setShowAiToolbar] = useState(false);
+  const [showAiSummaryModal, setShowAiSummaryModal] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -84,6 +94,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [showSpellcheck, setShowSpellcheck] = useState(false);
   const [showLinterPanel, setShowLinterPanel] = useState(false);
   const [isZenMode, setIsZenMode] = useState(false);
+
+  const handleInsertTakeaways = (takeawaysMarkdown: string, placement: 'top' | 'cursor' | 'replace') => {
+    const cursorIndex = textareaRef.current ? textareaRef.current.selectionStart : undefined;
+    const updated = insertTakeawaysIntoMarkdown(markdown, takeawaysMarkdown, placement, cursorIndex);
+    onChangeMarkdown(updated);
+    if (placement === 'top') {
+      onShowToast('Key Takeaways Added', 'Bulleted executive section placed at top of document', 'success');
+    } else if (placement === 'replace') {
+      onShowToast('Document Replaced', 'Replaced document with Key Takeaways summary', 'info');
+    } else {
+      onShowToast('Takeaways Inserted', 'Inserted at cursor position', 'success');
+    }
+  };
 
   const handleToggleZenMode = () => {
     const next = !isZenMode;
@@ -366,15 +389,22 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     }, 0);
   };
 
-  // Clean extra blank lines and trailing whitespace
+  // Format Markdown with comprehensive normalizer (lists, header spacing, whitespace)
   const handleCleanFormat = () => {
-    const cleaned = markdown
-      .split('\n')
-      .map((line) => line.trimEnd())
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n');
-    onChangeMarkdown(cleaned);
-    onShowToast('Formatting Cleaned', 'Trimmed excess whitespace and duplicate empty lines');
+    const editorPrefs = options?.editorPreferences;
+    const formatted = formatMarkdownDocument(markdown, {
+      normalizeLists: editorPrefs?.normalizeLists ?? true,
+      normalizeHeaders: editorPrefs?.normalizeHeaders ?? true,
+      normalizeSpacing: editorPrefs?.normalizeSpacing ?? true,
+      normalizeTables: editorPrefs?.normalizeTables ?? true,
+      normalizeBlockquotes: editorPrefs?.normalizeBlockquotes ?? true,
+    });
+    if (formatted !== markdown) {
+      onChangeMarkdown(formatted);
+      onShowToast('Markdown Formatted', 'Normalized lists, header spacing, and blank lines');
+    } else {
+      onShowToast('Already Formatted', 'Document syntax, lists, and spacing are already normalized', 'info');
+    }
   };
 
   const handleCopyAll = async () => {
@@ -533,10 +563,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 {lastAutoSaveTime && (
                   <>
                     <span>•</span>
-                    <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium text-[10px]">
-                      <Check className="w-3 h-3" />
-                      Auto-saved {new Date(lastAutoSaveTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                    <button
+                      onClick={onOpenSettings}
+                      className="inline-flex items-center gap-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2.5 py-0.5 rounded-full font-medium text-[10px] transition-colors"
+                      title="Click to configure Auto-Save and Markdown Formatter settings"
+                    >
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span>Auto-saved {new Date(lastAutoSaveTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {(options?.editorPreferences?.formatOnAutoSave ?? options?.formatOnAutoSave ?? true) && (
+                        <span className="bg-emerald-600 text-white text-[8px] font-bold px-1.5 py-0.2 rounded-full">
+                          Auto-Fmt ON
+                        </span>
+                      )}
+                    </button>
                   </>
                 )}
               </div>
@@ -682,6 +721,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       {showAiToolbar && (
         <AiRefineToolbar
           onRefineMarkdown={onRefineMarkdown}
+          onOpenAiSummary={() => setShowAiSummaryModal(true)}
           isRefining={isRefining}
           onClose={() => setShowAiToolbar(false)}
         />
@@ -705,6 +745,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         onCopyAll={handleCopyAll}
         onClear={handleClear}
         onToggleAiDrawer={() => setShowAiToolbar(!showAiToolbar)}
+        onOpenAiSummary={() => setShowAiSummaryModal(true)}
         onOpenHelp={() => setShowHelpModal(true)}
         onToggleSearch={() => setShowSearch(!showSearch)}
         onOpenTableBuilder={() => setShowTableBuilder(true)}
@@ -719,6 +760,36 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         detectedLangInfo={autoDetectInfo}
         onToggleZenMode={handleToggleZenMode}
         isZenMode={isZenMode}
+        formatOnAutoSave={options?.editorPreferences?.formatOnAutoSave ?? options?.formatOnAutoSave ?? true}
+        onToggleFormatOnAutoSave={() => {
+          if (setOptions && options) {
+            const current = options.editorPreferences?.formatOnAutoSave ?? options.formatOnAutoSave ?? true;
+            const updated = !current;
+            setOptions({
+              ...options,
+              formatOnAutoSave: updated,
+              editorPreferences: {
+                ...(options.editorPreferences || {
+                  formatOnAutoSave: true,
+                  autoSaveIntervalSeconds: 30,
+                  normalizeLists: true,
+                  normalizeHeaders: true,
+                  normalizeSpacing: true,
+                  normalizeTables: true,
+                  normalizeBlockquotes: true,
+                }),
+                formatOnAutoSave: updated,
+              },
+            });
+            onShowToast(
+              updated ? 'Auto-Format Enabled' : 'Auto-Format Disabled',
+              updated
+                ? 'Markdown will be normalized on every auto-save'
+                : 'Auto-save will save raw text without formatting'
+            );
+          }
+        }}
+        onOpenSettings={onOpenSettings}
       />
 
       {/* Main Content View (Editor + Preview) */}
@@ -914,6 +985,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         onToggleSearch={() => setShowSearch(!showSearch)}
         onCleanFormat={handleCleanFormat}
         onToggleAiDrawer={() => setShowAiToolbar(!showAiToolbar)}
+        onOpenAiSummary={() => setShowAiSummaryModal(true)}
         onOpenHelp={() => setShowHelpModal(true)}
         onCopyAll={handleCopyAll}
         onToggleOutline={() => setShowOutline(!showOutline)}
@@ -940,6 +1012,15 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         isOpen={showTableBuilder}
         onClose={() => setShowTableBuilder(false)}
         onInsertTable={(tableMd) => handleInsertText(tableMd)}
+      />
+
+      {/* AI Key Takeaways Summary Generator Modal */}
+      <AiSummaryModal
+        isOpen={showAiSummaryModal}
+        onClose={() => setShowAiSummaryModal(false)}
+        markdown={markdown}
+        onInsertTakeaways={handleInsertTakeaways}
+        onShowToast={onShowToast}
       />
 
     </div>

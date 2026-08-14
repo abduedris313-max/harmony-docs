@@ -4,12 +4,14 @@ import { AiAction } from '../types';
 
 interface AiRefineToolbarProps {
   onRefineMarkdown: (action: AiAction, customPrompt?: string, targetLanguage?: string) => Promise<void>;
+  onOpenAiSummary?: () => void;
   isRefining: boolean;
   onClose: () => void;
 }
 
 export const AiRefineToolbar: React.FC<AiRefineToolbarProps> = ({
   onRefineMarkdown,
+  onOpenAiSummary,
   isRefining,
   onClose,
 }) => {
@@ -58,19 +60,38 @@ export const AiRefineToolbar: React.FC<AiRefineToolbarProps> = ({
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2">
         
-        {/* Summarize */}
+        {/* Key Takeaways to Top */}
+        <button
+          disabled={isRefining}
+          onClick={() => {
+            if (onOpenAiSummary) {
+              onOpenAiSummary();
+            } else {
+              handleActionClick('summarize');
+            }
+          }}
+          className="p-2.5 bg-gradient-to-br from-purple-50/90 to-blue-50/90 hover:from-purple-100 hover:to-blue-100 border border-purple-200 hover:border-purple-300 rounded-xl text-left transition-all group shadow-xs col-span-2 sm:col-span-1 ring-1 ring-purple-500/10"
+        >
+          <div className="flex items-center space-x-1.5 text-purple-700 mb-1">
+            <Sparkles className="w-3.5 h-3.5 text-purple-600 animate-pulse" />
+            <span className="text-xs font-bold text-purple-900 group-hover:text-purple-700">Key Takeaways</span>
+          </div>
+          <p className="text-[10px] text-purple-700/80 line-clamp-1 font-medium">Add bulleted section at top</p>
+        </button>
+
+        {/* Summarize Document */}
         <button
           disabled={isRefining}
           onClick={() => handleActionClick('summarize')}
-          className="p-2.5 bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-all group shadow-sm"
+          className="p-2.5 bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-all group shadow-xs"
         >
           <div className="flex items-center space-x-2 text-blue-600 mb-1">
             <FileText className="w-3.5 h-3.5" />
-            <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-600">Summarize</span>
+            <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-600">Executive Summary</span>
           </div>
-          <p className="text-[10px] text-slate-500 line-clamp-1">Extract key bullet points</p>
+          <p className="text-[10px] text-slate-500 line-clamp-1">Synthesize entire document</p>
         </button>
 
         {/* Grammar & Polish */}

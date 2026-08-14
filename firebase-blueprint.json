@@ -1,0 +1,222 @@
+{
+  "entities": {
+    "Book": {
+      "title": "Book",
+      "description": "A Markdown document, book, or article saved in the user's library.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the book/document",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the document owner",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the document or book",
+          "maxLength": 300
+        },
+        "author": {
+          "type": "string",
+          "description": "Author name or creator",
+          "maxLength": 200
+        },
+        "source": {
+          "type": "string",
+          "description": "Origin source of the document",
+          "enum": ["local", "cloud", "online"]
+        },
+        "category": {
+          "type": "string",
+          "description": "Category or genre",
+          "maxLength": 100
+        },
+        "shelf": {
+          "type": "string",
+          "description": "Reading shelf assignment",
+          "enum": ["Currently Reading", "To Read", "Completed", "Favorites", "Technical", "Classics"]
+        },
+        "content": {
+          "type": "string",
+          "description": "Full Markdown or text body content",
+          "maxLength": 1000000
+        },
+        "coverColor": {
+          "type": "string",
+          "description": "Color hex code for cover rendering",
+          "maxLength": 30
+        },
+        "progressPercent": {
+          "type": "number",
+          "description": "Reading or writing completion percentage"
+        },
+        "lastReadTimestamp": {
+          "type": "number",
+          "description": "Last accessed timestamp"
+        },
+        "tags": {
+          "type": "array",
+          "description": "List of user tags"
+        },
+        "wordCount": {
+          "type": "number",
+          "description": "Total word count"
+        },
+        "folderId": {
+          "type": "string",
+          "description": "Optional parent folder ID",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": ["id", "userId", "title", "content"]
+    },
+    "DocumentFolder": {
+      "title": "DocumentFolder",
+      "description": "A folder for grouping documents and notes.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique folder identifier",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the folder owner",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Folder display name",
+          "maxLength": 150
+        },
+        "color": {
+          "type": "string",
+          "description": "Folder theme accent color",
+          "maxLength": 30
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Creation timestamp in milliseconds"
+        }
+      },
+      "required": ["id", "userId", "name"]
+    },
+    "HistoryItem": {
+      "title": "HistoryItem",
+      "description": "A converted PDF to Markdown history item.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique history item identifier",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user",
+          "maxLength": 128
+        },
+        "filename": {
+          "type": "string",
+          "description": "Original file name",
+          "maxLength": 300
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Conversion timestamp in milliseconds"
+        },
+        "markdown": {
+          "type": "string",
+          "description": "Converted Markdown content",
+          "maxLength": 1000000
+        },
+        "fileSizeBytes": {
+          "type": "number",
+          "description": "Original file size in bytes"
+        },
+        "wordCount": {
+          "type": "number",
+          "description": "Extracted word count"
+        }
+      },
+      "required": ["id", "userId", "filename", "markdown"]
+    },
+    "VersionSnapshot": {
+      "title": "VersionSnapshot",
+      "description": "A saved editor version snapshot.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique snapshot identifier",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user",
+          "maxLength": 128
+        },
+        "label": {
+          "type": "string",
+          "description": "User or system snapshot label",
+          "maxLength": 200
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Snapshot timestamp in milliseconds"
+        },
+        "markdown": {
+          "type": "string",
+          "description": "Markdown text at snapshot time",
+          "maxLength": 1000000
+        },
+        "wordCount": {
+          "type": "number",
+          "description": "Total word count"
+        },
+        "charCount": {
+          "type": "number",
+          "description": "Total character count"
+        },
+        "isAutoSave": {
+          "type": "boolean",
+          "description": "Flag if snapshot was automatically captured"
+        }
+      },
+      "required": ["id", "userId", "label", "markdown"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/books/{bookId}": {
+      "schema": { "$ref": "#/entities/Book" },
+      "description": "Personal document library items and books belonging to a specific authenticated user."
+    },
+    "/users/{userId}/folders/{folderId}": {
+      "schema": { "$ref": "#/entities/DocumentFolder" },
+      "description": "Folder organization items belonging to a specific authenticated user."
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": { "$ref": "#/entities/HistoryItem" },
+      "description": "PDF conversion history items belonging to a specific authenticated user."
+    },
+    "/users/{userId}/snapshots/{snapshotId}": {
+      "schema": { "$ref": "#/entities/VersionSnapshot" },
+      "description": "Editor version snapshots belonging to a specific authenticated user."
+    }
+  }
+}

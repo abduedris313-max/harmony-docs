@@ -22,6 +22,7 @@ interface FloatingToolMenuProps {
   onToggleSearch: () => void;
   onCleanFormat: () => void;
   onToggleAiDrawer: () => void;
+  onOpenAiSummary?: () => void;
   onOpenHelp: () => void;
   onCopyAll: () => void;
   onToggleOutline?: () => void;
@@ -41,6 +42,7 @@ export const FloatingToolMenu: React.FC<FloatingToolMenuProps> = ({
   onToggleSearch,
   onCleanFormat,
   onToggleAiDrawer,
+  onOpenAiSummary,
   onOpenHelp,
   onCopyAll,
   onToggleOutline,
@@ -236,6 +238,24 @@ export const FloatingToolMenu: React.FC<FloatingToolMenuProps> = ({
               <div className="text-[10px] font-normal text-slate-400">Ctrl+F search tool</div>
             </div>
           </button>
+
+          {onOpenAiSummary && (
+            <button
+              onClick={() => {
+                onOpenAiSummary();
+                setIsOpen(false);
+              }}
+              className="flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded-xl transition-all text-left"
+            >
+              <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <div>AI Key Takeaways</div>
+                <div className="text-[10px] font-normal text-slate-400">Generate bullets at top</div>
+              </div>
+            </button>
+          )}
 
           <button
             onClick={() => {

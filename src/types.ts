@@ -1,3 +1,13 @@
+export interface EditorPreferences {
+  formatOnAutoSave: boolean;
+  autoSaveIntervalSeconds: number; // e.g. 15, 30, 60
+  normalizeLists: boolean;
+  normalizeHeaders: boolean;
+  normalizeSpacing: boolean;
+  normalizeTables: boolean;
+  normalizeBlockquotes: boolean;
+}
+
 export interface ConversionOptions {
   preserveLayout: boolean;
   extractTables: boolean;
@@ -6,6 +16,8 @@ export interface ConversionOptions {
   cleanHeadersFooters: boolean;
   pageRange: string;
   languageHint?: string;
+  formatOnAutoSave?: boolean;
+  editorPreferences?: EditorPreferences;
 }
 
 export interface DocumentStats {
