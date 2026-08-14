@@ -40,9 +40,6 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.0.379'}/pdf.worker.min.mjs`;
 }
 
-// Sample PDFs reference
-import { SAMPLE_PDFS, SamplePdf } from '../data/samplePdfs';
-
 interface PdfEditorViewProps {
   onConvertEditedPdf: (pdfBytes: Uint8Array, filename: string) => void;
   onShowToast: (title: string, message?: string, type?: 'success' | 'error' | 'info') => void;
@@ -390,25 +387,6 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         }
       };
       reader.readAsArrayBuffer(file);
-    }
-  };
-
-  // Load a Pre-loaded Sample PDF
-  const handleLoadSamplePdf = async (sample: SamplePdf) => {
-    setIsLoading(true);
-    try {
-      // Decode Base64
-      const binaryString = atob(sample.base64);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      await loadPdfFromBytes(bytes, `${sample.id}.pdf`);
-    } catch (err: any) {
-      onShowToast('Failed to load sample', err.message || 'Error processing sample PDF', 'error');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -1261,14 +1239,6 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             >
               <Upload className="w-4 h-4" />
               <span>Upload Local PDF</span>
-            </button>
-
-            <button
-              onClick={() => handleLoadSamplePdf(SAMPLE_PDFS[0])}
-              className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>Try with Sample PDF</span>
             </button>
           </div>
 

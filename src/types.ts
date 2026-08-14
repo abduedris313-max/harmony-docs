@@ -6,6 +6,7 @@ export interface EditorPreferences {
   normalizeSpacing: boolean;
   normalizeTables: boolean;
   normalizeBlockquotes: boolean;
+  cloudAutoSync?: boolean;
 }
 
 export interface ConversionOptions {
@@ -17,6 +18,7 @@ export interface ConversionOptions {
   pageRange: string;
   languageHint?: string;
   formatOnAutoSave?: boolean;
+  cloudAutoSync?: boolean;
   editorPreferences?: EditorPreferences;
 }
 
@@ -30,6 +32,7 @@ export interface DocumentStats {
 export interface HistoryItem {
   id: string;
   filename: string;
+  originalFilename?: string;
   timestamp: number;
   markdown: string;
   fileSizeBytes: number;
@@ -54,6 +57,7 @@ export interface ToastMessage {
 export interface VersionSnapshot {
   id: string;
   label: string;
+  filename?: string;
   timestamp: number;
   markdown: string;
   wordCount: number;
@@ -78,12 +82,13 @@ export interface CloudFile {
   id: string;
   name: string;
   provider: CloudProvider;
-  type: 'pdf' | 'md' | 'folder' | 'txt';
+  type: 'pdf' | 'md' | 'folder' | 'txt' | 'gdoc';
   sizeBytes: number;
   updatedAt: number;
   path: string;
   content?: string;
   pdfDataUrl?: string;
+  webViewLink?: string;
 }
 
 // Book Library & Personal Collection Types

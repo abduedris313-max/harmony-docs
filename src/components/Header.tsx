@@ -508,6 +508,40 @@ export const Header: React.FC<HeaderProps> = ({
                             .pdf
                           </span>
                         </button>
+
+                        <div className="my-1 border-t border-slate-100" />
+
+                        <button
+                          onClick={() => {
+                            onOpenCloudStorage();
+                            setShowExportMenu(false);
+                          }}
+                          className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center justify-between transition-colors"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <FileText className="w-4 h-4 text-indigo-600" />
+                            <span>Export to Google Doc</span>
+                          </div>
+                          <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded font-mono">
+                            Docs
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            onOpenCloudStorage();
+                            setShowExportMenu(false);
+                          }}
+                          className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center justify-between transition-colors"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <Cloud className="w-4 h-4 text-blue-600" />
+                            <span>Save to Google Drive</span>
+                          </div>
+                          <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded font-mono">
+                            Drive
+                          </span>
+                        </button>
                       </div>
                     </>
                   )}

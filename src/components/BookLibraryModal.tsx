@@ -505,57 +505,63 @@ export const BookLibraryModal: React.FC<BookLibraryModalProps> = ({
                   <Cloud className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">Google Drive &amp; Cloud Bookshelf</h3>
-                  <p className="text-xs text-slate-500">Connected account: abdutuahir@gmail.com</p>
+                  <h3 className="font-bold text-sm text-slate-900">Cloud Bookshelf &amp; Storage</h3>
+                  <p className="text-xs text-slate-500">Books synced with Google Drive and Cloud storage</p>
                 </div>
               </div>
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full flex items-center gap-1">
-                <Check className="w-3 h-3" />
-                <span>Synced</span>
+              <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full flex items-center gap-1">
+                <Cloud className="w-3 h-3" />
+                <span>Cloud Synced</span>
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800">Modern Web Architecture Guide</span>
-                  <span className="text-[10px] bg-blue-100 text-[#007AFF] font-bold px-2 py-0.5 rounded-full">Google Drive</span>
+            {books.filter((b) => b.source === 'cloud').length === 0 ? (
+              <div className="text-center py-12 px-4 space-y-3">
+                <div className="w-14 h-14 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mx-auto">
+                  <Cloud className="w-7 h-7" />
                 </div>
-                <p className="text-xs text-slate-500">
-                  Comprehensive guidelines on modular UI, state locality, and design token scales.
+                <p className="text-sm font-bold text-slate-700">No cloud books synced yet</p>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Export your active documents to Google Drive or sync books to access them across all your devices.
                 </p>
-                <button
-                  onClick={() => {
-                    const found = books.find((b) => b.id === 'book-2');
-                    if (found) onSelectBookToRead(found);
-                  }}
-                  className="w-full py-2 bg-[#007AFF] text-white rounded-xl text-xs font-bold hover:bg-[#0062CC] transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>Read Cloud Book</span>
-                </button>
               </div>
-
-              <div className="p-4 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800">Prompt Engineering Blueprint</span>
-                  <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Dropbox Sync</span>
-                </div>
-                <p className="text-xs text-slate-500">
-                  Research notes on system prompts, function calling, and agent workflow design.
-                </p>
-                <button
-                  onClick={() => {
-                    const found = books.find((b) => b.id === 'book-4');
-                    if (found) onSelectBookToRead(found);
-                  }}
-                  className="w-full py-2 bg-[#007AFF] text-white rounded-xl text-xs font-bold hover:bg-[#0062CC] transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>Read Cloud Book</span>
-                </button>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {books
+                  .filter((b) => b.source === 'cloud')
+                  .map((book) => (
+                    <div
+                      key={book.id}
+                      className="p-4 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-3 hover:border-blue-300 transition-all"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800">{book.title}</span>
+                        <span className="text-[10px] bg-blue-100 text-[#007AFF] font-bold px-2 py-0.5 rounded-full">
+                          {book.category || 'Cloud Book'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 line-clamp-2">
+                        {book.description || `By ${book.author}`}
+                      </p>
+                      <div className="flex items-center space-x-2 pt-1">
+                        <button
+                          onClick={() => onSelectBookToRead(book)}
+                          className="flex-1 py-2 bg-[#007AFF] text-white rounded-xl text-xs font-bold hover:bg-[#0062CC] transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Read Book</span>
+                        </button>
+                        <button
+                          onClick={() => onOpenInEditor(book)}
+                          className="px-3 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-xs font-semibold transition-colors"
+                        >
+                          Open in Editor
+                        </button>
+                      </div>
+                    </div>
+                  ))}
               </div>
-            </div>
+            )}
           </div>
         )}
 

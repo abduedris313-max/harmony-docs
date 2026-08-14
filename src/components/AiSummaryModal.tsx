@@ -20,6 +20,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { renderMarkdownToHtml } from '../utils/markdownParser';
+import { postApiJson } from '../utils/apiClient';
 
 export interface AiSummaryModalProps {
   isOpen: boolean;
@@ -65,21 +66,15 @@ export const AiSummaryModal: React.FC<AiSummaryModalProps> = ({
     setErrorMsg(null);
 
     try {
-      const response = await fetch('/api/generate-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          markdown,
-          bulletCount,
-          style: overrideStyle || style,
-          focusArea: customFocus.trim() || undefined,
-        }),
+      const data = await postApiJson('/api/generate-summary', {
+        markdown,
+        bulletCount,
+        style: overrideStyle || style,
+        focusArea: customFocus.trim() || undefined,
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to generate key takeaways summary.');
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Failed to generate key takeaways summary.');
       }
 
       setGeneratedTakeaways(data.takeawaysMarkdown);

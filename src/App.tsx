@@ -16,12 +16,12 @@ import { LocalFileManagerModal } from './components/LocalFileManagerModal';
 import { FirebaseSyncModal } from './components/FirebaseSyncModal';
 import { ToastContainer } from './components/Toast';
 import { ConversionOptions, HistoryItem, ToastMessage, AiAction, VersionSnapshot, Book, Bookmark, BookShelf, DocumentFolder, DirectoryScanItem, LibraryBackup } from './types';
-import { SAMPLE_PDFS, SamplePdf } from './data/samplePdfs';
-import { INITIAL_BOOKS } from './data/sampleBooks';
 import { extractTextFromPdfArrayBuffer } from './utils/browserPdfParser';
+import { postApiJson, streamApiSse } from './utils/apiClient';
 import { registerServiceWorker, subscribeToOnlineStatus } from './utils/offlineManager';
 import { saveToOfflineStore, getAllFromOfflineStore, removeFromOfflineStore } from './utils/indexedDBStorage';
 import { subscribeToAuth, subscribeToUserBooks, subscribeToUserFolders, saveBookToFirestore, deleteBookFromFirestore, saveFolderToFirestore, deleteFolderFromFirestore } from './firebase/firebaseService';
+import { getStoredGoogleDriveToken, uploadFileToGoogleDrive } from './utils/googleDriveService';
 import { User } from 'firebase/auth';
 
 const STORAGE_KEY = 'pdf_to_md_history_v1';
@@ -41,6 +41,9 @@ export default function App() {
   const [activeMarkdown, setActiveMarkdown] = useState<string>('');
   const [activeFilename, setActiveFilename] = useState<string>('');
   const [activePdfDataUrl, setActivePdfDataUrl] = useState<string | undefined>(undefined);
+  const [activeDriveFileId, setActiveDriveFileId] = useState<string | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
+  const [lastCloudSyncTime, setLastCloudSyncTime] = useState<number | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
   const [lastAutoSaveTime, setLastAutoSaveTime] = useState<number | null>(null);
@@ -59,9 +62,9 @@ export default function App() {
   const [books, setBooks] = useState<Book[]>(() => {
     try {
       const saved = localStorage.getItem(BOOKS_KEY);
-      return saved ? JSON.parse(saved) : INITIAL_BOOKS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_BOOKS;
+      return [];
     }
   });
 
@@ -166,6 +169,9 @@ export default function App() {
         if (parsed.markdown && parsed.markdown.trim()) {
           setActiveMarkdown(parsed.markdown);
           setActiveFilename(parsed.filename || 'Auto-saved Draft.md');
+          if (parsed.driveFileId) {
+            setActiveDriveFileId(parsed.driveFileId);
+          }
           setLastAutoSaveTime(parsed.timestamp || Date.now());
         }
       }
@@ -173,34 +179,6 @@ export default function App() {
       console.warn('Failed to restore auto-saved draft:', e);
     }
   }, []);
-
-  // 30-second Auto-Save mechanism
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (activeMarkdown && activeMarkdown.trim()) {
-        try {
-          const now = Date.now();
-          const autoSaveData = {
-            markdown: activeMarkdown,
-            filename: activeFilename,
-            timestamp: now,
-          };
-          localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autoSaveData));
-          setLastAutoSaveTime(now);
-        } catch (e) {
-          console.warn('Auto-save failed:', e);
-        }
-      }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [activeMarkdown, activeFilename]);
-
-  const [isConverting, setIsConverting] = useState<boolean>(false);
-  const [conversionProgress, setConversionProgress] = useState<string>('');
-  const [conversionError, setConversionError] = useState<string | null>(null);
-
-  const [isRefining, setIsRefining] = useState<boolean>(false);
 
   const [options, setOptions] = useState<ConversionOptions>({
     preserveLayout: true,
@@ -210,6 +188,74 @@ export default function App() {
     cleanHeadersFooters: true,
     pageRange: 'All',
   });
+
+  const [isConverting, setIsConverting] = useState<boolean>(false);
+  const [conversionProgress, setConversionProgress] = useState<string>('');
+  const [conversionError, setConversionError] = useState<string | null>(null);
+
+  const [isRefining, setIsRefining] = useState<boolean>(false);
+
+  // Auto-Save mechanism: Local storage persistence + optional Google Drive Cloud Auto-Sync
+  useEffect(() => {
+    const intervalSeconds = options.editorPreferences?.autoSaveIntervalSeconds || 30;
+    const intervalMs = Math.max(10, intervalSeconds) * 1000;
+
+    const interval = setInterval(async () => {
+      if (!activeMarkdown || !activeMarkdown.trim()) return;
+
+      const now = Date.now();
+
+      // 1. Local Auto-Save Persistence
+      try {
+        const autoSaveData = {
+          markdown: activeMarkdown,
+          filename: activeFilename,
+          timestamp: now,
+          driveFileId: activeDriveFileId || undefined,
+        };
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autoSaveData));
+        setLastAutoSaveTime(now);
+      } catch (e) {
+        console.warn('Auto-save failed:', e);
+      }
+
+      // 2. Google Drive Cloud Auto-Sync (if authenticated and enabled)
+      const isCloudAutoSyncEnabled = options.editorPreferences?.cloudAutoSync ?? options.cloudAutoSync ?? true;
+      const driveToken = getStoredGoogleDriveToken();
+
+      if (isCloudAutoSyncEnabled && driveToken && isOnline) {
+        try {
+          setIsCloudSyncing(true);
+          const cleanName = activeFilename?.trim()
+            ? (activeFilename.endsWith('.md') ? activeFilename : `${activeFilename.replace(/\.pdf$|\.txt$|\.gdoc$/i, '')}.md`)
+            : 'Document_AutoSave.md';
+
+          const result = await uploadFileToGoogleDrive(
+            {
+              name: cleanName,
+              content: activeMarkdown,
+              mimeType: 'text/markdown',
+              existingFileId: activeDriveFileId || undefined,
+            },
+            driveToken
+          );
+
+          if (result && result.id) {
+            if (result.id !== activeDriveFileId) {
+              setActiveDriveFileId(result.id);
+            }
+            setLastCloudSyncTime(Date.now());
+          }
+        } catch (cloudErr) {
+          console.warn('Google Drive cloud auto-sync notice:', cloudErr);
+        } finally {
+          setIsCloudSyncing(false);
+        }
+      }
+    }, intervalMs);
+
+    return () => clearInterval(interval);
+  }, [activeMarkdown, activeFilename, activeDriveFileId, options, isOnline]);
 
   const [history, setHistory] = useState<HistoryItem[]>(() => {
     try {
@@ -308,33 +354,36 @@ export default function App() {
       setConversionProgress('Parsing document layout & extracting text streams...');
 
       let markdown = '';
-      let conversionMethod = 'API Server';
+      let conversionMethod = 'API Server Engine';
 
-      // 2. Try backend conversion endpoint first
+      // 2. Try backend SSE streaming conversion first
       try {
-        const response = await fetch('/api/convert-pdf', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+        await streamApiSse(
+          '/api/stream-convert',
+          {
             pdfBase64,
             options: opts,
-          }),
-        });
-
-        const contentType = response.headers.get('content-type') || '';
-        if (response.ok && contentType.includes('application/json')) {
-          const data = await response.json();
-          if (data && data.success && data.markdown) {
-            markdown = data.markdown;
+          },
+          {
+            onProgress: (progress, message) => {
+              setConversionProgress(`[${progress}%] ${message}`);
+            },
+            onChunk: (chunk) => {
+              markdown += chunk;
+              setConversionProgress(`Streaming Markdown conversion... (${markdown.length} chars)`);
+            },
+            onComplete: (data) => {
+              if (data && data.markdown) {
+                markdown = data.markdown;
+              }
+            },
           }
-        }
+        );
       } catch (apiErr) {
         console.warn('Backend PDF endpoint unavailable or failed, utilizing client fallback parser:', apiErr);
       }
 
-      // 3. Fallback to client-side PDF parser if API route was unreached or returned error/502
+      // 3. Fallback to client-side PDF parser if API route was unreached or returned error
       if (!markdown) {
         markdown = await extractTextFromPdfArrayBuffer(arrayBuffer, file.name, opts);
         conversionMethod = 'Client Fallback Parser';
@@ -398,85 +447,31 @@ export default function App() {
     }
   };
 
-  // Convert Sample PDF
-  const handleConvertSample = async (sample: SamplePdf, opts: ConversionOptions) => {
-    setIsConverting(true);
-    setConversionError(null);
-    setConversionProgress(`Converting ${sample.title}...`);
+  const DEFAULT_SAMPLE_GUIDE = `# Getting Started with PDF to Markdown
 
-    try {
-      let markdown = '';
+Welcome to the **PDF to Markdown Converter**!
 
-      try {
-        const response = await fetch('/api/convert-pdf', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            pdfBase64: sample.base64,
-            options: opts,
-          }),
-        });
+## Key Features
+- **Precision Conversion**: Convert PDFs, research papers, reports, and books into clean Markdown.
+- **AI Refinement**: Use Gemini AI to summarize, translate, clean up formatting, or fix OCR issues.
+- **Library & Book Manager**: Organize documents into shelves and custom folders.
+- **Cloud Synchronization**: Sync documents with Google Drive and Cloud Storage.
 
-        const contentType = response.headers.get('content-type') || '';
-        if (response.ok && contentType.includes('application/json')) {
-          const data = await response.json();
-          if (data && data.success && data.markdown) {
-            markdown = data.markdown;
-          }
-        }
-      } catch (apiErr) {
-        console.warn('Backend API unreached for sample, loading sample markdown directly:', apiErr);
-      }
+## Quick Start Guide
+1. Click **Upload PDF** in the top navigation bar.
+2. Select or drag & drop your PDF file.
+3. Configure conversion options as needed.
+4. Click **Convert PDF** to view and edit your Markdown document!
+`;
 
-      if (!markdown) {
-        markdown = sample.sampleMarkdown;
-      }
-
-      setActiveMarkdown(markdown);
-      setActiveFilename(`${sample.id}.pdf`);
-      const samplePdfDataUrl = `data:application/pdf;base64,${sample.base64}`;
-      setActivePdfDataUrl(samplePdfDataUrl);
-
-      const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
-      const newItem: HistoryItem = {
-        id: Date.now().toString(),
-        filename: `${sample.id}.pdf`,
-        timestamp: Date.now(),
-        markdown,
-        fileSizeBytes: 245000,
-        wordCount,
-        pdfDataUrl: samplePdfDataUrl,
-      };
-
-      setHistory((prev) => [newItem, ...prev.slice(0, 19)]);
-      showToast('Sample Loaded', `${sample.title} ready for editing`);
-
-      // Auto Snapshot
-      const newSnap: VersionSnapshot = {
-        id: `snap-${Date.now()}`,
-        label: `Sample PDF: ${sample.title}`,
-        timestamp: Date.now(),
-        markdown,
-        wordCount,
-        charCount: markdown.length,
-        isAutoSave: true,
-      };
-      setSnapshots((prev) => [newSnap, ...prev]);
-      setCurrentView('editor');
-    } catch (err: any) {
-      setActiveMarkdown(sample.sampleMarkdown);
-      setActiveFilename(`${sample.id}.pdf`);
-      setCurrentView('editor');
-      showToast('Sample Loaded', `${sample.title} ready for editing`);
-    } finally {
-      setIsConverting(false);
-      setConversionProgress('');
-    }
+  const handleLoadSampleGuide = () => {
+    setActiveMarkdown(DEFAULT_SAMPLE_GUIDE);
+    setActiveFilename('Getting-Started-Guide.md');
+    setCurrentView('editor');
+    showToast('Guide Loaded', 'Getting Started document ready for editing');
   };
 
-  // Refine Markdown using AI
+  // Refine Markdown using AI (Real-time SSE Streaming)
   const handleRefineMarkdown = async (action: AiAction, customPrompt?: string, targetLanguage?: string) => {
     if (!activeMarkdown.trim()) return;
 
@@ -484,43 +479,43 @@ export default function App() {
     handleTakeSnapshot(`Before AI Action: ${action}`, true);
 
     setIsRefining(true);
+    let accumulatedRefinement = '';
+
     try {
-      const response = await fetch('/api/refine-markdown', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      await streamApiSse(
+        '/api/stream-refine',
+        {
           markdown: activeMarkdown,
           action,
           customPrompt,
           targetLanguage,
-        }),
-      });
+        },
+        {
+          onChunk: (chunk) => {
+            accumulatedRefinement += chunk;
+            setActiveMarkdown(accumulatedRefinement);
+          },
+          onComplete: () => {
+            showToast('AI Stream Refinement Complete!', 'Markdown content updated in real-time');
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to refine Markdown.');
-      }
-
-      const refined = data.refinedMarkdown;
-      setActiveMarkdown(refined);
-      showToast('AI Refinement Applied!', 'Markdown content updated');
-
-      // Save post-refinement snapshot
-      const wordCount = refined.trim().split(/\s+/).filter(Boolean).length;
-      const postSnap: VersionSnapshot = {
-        id: `snap-${Date.now()}`,
-        label: `After AI Action: ${action}`,
-        timestamp: Date.now(),
-        markdown: refined,
-        wordCount,
-        charCount: refined.length,
-        isAutoSave: true,
-      };
-      setSnapshots((prev) => [postSnap, ...prev]);
-
+            // Save post-refinement snapshot
+            const wordCount = accumulatedRefinement.trim().split(/\s+/).filter(Boolean).length;
+            const postSnap: VersionSnapshot = {
+              id: `snap-${Date.now()}`,
+              label: `After AI Action: ${action}`,
+              timestamp: Date.now(),
+              markdown: accumulatedRefinement,
+              wordCount,
+              charCount: accumulatedRefinement.length,
+              isAutoSave: true,
+            };
+            setSnapshots((prev) => [postSnap, ...prev]);
+          },
+          onError: (streamErr) => {
+            showToast('Refinement Error', streamErr.message || 'Failed to refine document', 'error');
+          },
+        }
+      );
     } catch (err: any) {
       showToast('Refinement Error', err.message || 'Failed to refine document', 'error');
     } finally {
@@ -564,32 +559,30 @@ export default function App() {
       setIsConverting(true);
       setConversionProgress(`Converting ${filename} from Cloud...`);
       try {
-        const response = await fetch('/api/convert-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfBase64: base64, options }),
-        });
-        const data = await response.json();
-        if (data.success && data.markdown) {
+        const data = await postApiJson('/api/convert-pdf', { pdfBase64: base64, options });
+        if (data && data.success && data.markdown) {
           setActiveMarkdown(data.markdown);
           showToast('Cloud PDF Converted', filename);
         }
-      } catch (err) {
-        showToast('Error Converting Cloud PDF', 'Using sample text fallback', 'error');
+      } catch (err: any) {
+        showToast('Error Converting Cloud PDF', err.message || 'Using sample text fallback', 'error');
       } finally {
         setIsConverting(false);
         setConversionProgress('');
       }
     } else {
       // Sample conversion fallback
-      handleConvertSample(SAMPLE_PDFS[0], options);
+      handleLoadSampleGuide();
     }
   };
 
-  const handleLoadMarkdownFromCloud = (markdownContent: string, filename: string) => {
+  const handleLoadMarkdownFromCloud = (markdownContent: string, filename: string, cloudFileId?: string) => {
     setActiveMarkdown(markdownContent);
     setActiveFilename(filename);
     setActivePdfDataUrl(undefined);
+    if (cloudFileId) {
+      setActiveDriveFileId(cloudFileId);
+    }
   };
 
   const handleClearHistory = () => {
@@ -608,10 +601,12 @@ export default function App() {
       setActiveMarkdown('');
       setActiveFilename('');
       setActivePdfDataUrl(undefined);
+      setActiveDriveFileId(null);
     } else if (!activeMarkdown) {
       setActiveMarkdown('');
       setActiveFilename('');
       setActivePdfDataUrl(undefined);
+      setActiveDriveFileId(null);
     }
   };
 
@@ -931,7 +926,7 @@ export default function App() {
         onOpenLocalFileManager={() => setIsLocalFileManagerOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNewDocument={handleNewDocument}
-        onLoadSample={() => handleConvertSample(SAMPLE_PDFS[0], options)}
+        onLoadSample={handleLoadSampleGuide}
         onNewBlankDocument={handleNewBlankDocument}
         historyCount={history.length}
         versionCount={snapshots.length}
@@ -974,7 +969,7 @@ export default function App() {
             onCreateBookDetails={handleCreateBookDetails}
             onNewBlankDocument={handleNewBlankDocument}
             onOpenUploadView={() => setCurrentView('uploader')}
-            onLoadSample={() => handleConvertSample(SAMPLE_PDFS[0], options)}
+            onLoadSample={handleLoadSampleGuide}
             onOpenCloudStorage={() => setIsCloudModalOpen(true)}
             onOpenScanner={() => setIsDirectoryScannerOpen(true)}
             onOpenLocalFileManager={() => setIsLocalFileManagerOpen(true)}
@@ -1006,7 +1001,6 @@ export default function App() {
         {currentView === 'uploader' && (
           <PdfUploader
             onConvertPdf={handleConvertPdf}
-            onConvertSample={handleConvertSample}
             isConverting={isConverting}
             conversionProgress={conversionProgress}
             error={conversionError}
@@ -1102,6 +1096,7 @@ export default function App() {
         currentFilename={activeFilename}
         onLoadPdfFromCloud={handleLoadPdfFromCloud}
         onLoadMarkdownFromCloud={handleLoadMarkdownFromCloud}
+        onSavedFileToCloud={(fileId) => setActiveDriveFileId(fileId)}
         onShowToast={showToast}
       />
 

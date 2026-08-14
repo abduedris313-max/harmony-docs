@@ -14,8 +14,10 @@ import {
   Heading,
   Sparkles,
   AlignLeft,
+  Cloud,
 } from 'lucide-react';
 import { ConversionOptions, EditorPreferences } from '../types';
+import { getStoredGoogleDriveToken } from '../utils/googleDriveService';
 
 interface ConversionSettingsModalProps {
   isOpen: boolean;
@@ -36,6 +38,8 @@ export const ConversionSettingsModal: React.FC<ConversionSettingsModalProps> = (
 
   if (!isOpen) return null;
 
+  const isGoogleAuthed = !!getStoredGoogleDriveToken();
+
   const editorPrefs: EditorPreferences = options.editorPreferences || {
     formatOnAutoSave: options.formatOnAutoSave ?? true,
     autoSaveIntervalSeconds: 30,
@@ -44,6 +48,7 @@ export const ConversionSettingsModal: React.FC<ConversionSettingsModalProps> = (
     normalizeSpacing: true,
     normalizeTables: true,
     normalizeBlockquotes: true,
+    cloudAutoSync: options.cloudAutoSync ?? true,
   };
 
   const updateEditorPrefs = (patch: Partial<EditorPreferences>) => {
@@ -54,6 +59,7 @@ export const ConversionSettingsModal: React.FC<ConversionSettingsModalProps> = (
     setOptions({
       ...options,
       formatOnAutoSave: updated.formatOnAutoSave,
+      cloudAutoSync: updated.cloudAutoSync,
       editorPreferences: updated,
     });
   };
@@ -251,6 +257,48 @@ export const ConversionSettingsModal: React.FC<ConversionSettingsModalProps> = (
                     <option value={60}>Every 60s</option>
                     <option value={120}>Every 2 min</option>
                   </select>
+                </div>
+
+                {/* Google Drive Cloud Auto-Sync */}
+                <div className="p-3.5 bg-gradient-to-r from-blue-50/90 to-sky-50/90 dark:from-blue-950/40 dark:to-sky-950/40 rounded-xl border border-blue-200 dark:border-blue-800/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <Cloud className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 dark:text-white block flex items-center gap-1.5">
+                          Google Drive Auto-Sync
+                          {isGoogleAuthed ? (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
+                              Connected
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-slate-200 text-slate-700 font-medium px-1.5 py-0.2 rounded-full">
+                              Sign-in required
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
+                          Syncs active document state to Google Drive on auto-save
+                        </span>
+                      </div>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                      <input
+                        type="checkbox"
+                        checked={editorPrefs.cloudAutoSync ?? true}
+                        onChange={(e) => updateEditorPrefs({ cloudAutoSync: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-zinc-600 peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+
+                  <p className="text-[11px] text-blue-800 dark:text-blue-300 font-medium pt-1 border-t border-blue-200/60 dark:border-blue-800/40">
+                    When enabled and authenticated, auto-save saves locally and automatically updates your linked file in Google Drive (/My Drive/PDF Conversions/).
+                  </p>
                 </div>
               </div>
             </div>

@@ -1,11 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { Upload, FileText, CheckCircle2, Sparkles, Sliders, AlertCircle, File, Table, Sigma, ShieldCheck } from 'lucide-react';
 import { ConversionOptions } from '../types';
-import { SAMPLE_PDFS, SamplePdf } from '../data/samplePdfs';
 
 interface PdfUploaderProps {
   onConvertPdf: (file: File, options: ConversionOptions) => void;
-  onConvertSample: (sample: SamplePdf, options: ConversionOptions) => void;
   isConverting: boolean;
   conversionProgress: string;
   error: string | null;
@@ -15,7 +13,6 @@ interface PdfUploaderProps {
 
 export const PdfUploader: React.FC<PdfUploaderProps> = ({
   onConvertPdf,
-  onConvertSample,
   isConverting,
   conversionProgress,
   error,
@@ -264,49 +261,6 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
         )}
 
       </div>
-
-      {/* Demo Sample Cards Section */}
-      <div className="mt-10">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Or test with pre-loaded sample documents
-          </h3>
-          <span className="text-[11px] text-slate-500 font-medium">Instant AI Preview</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {SAMPLE_PDFS.map((sample) => (
-            <div
-              key={sample.id}
-              onClick={() => !isConverting && onConvertSample(sample, options)}
-              className="bg-white hover:bg-slate-50 border border-slate-200 hover:border-blue-300 rounded-xl p-4 cursor-pointer transition-all group shadow-sm hover:shadow-md"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-9 h-9 rounded-lg bg-red-50 border border-red-200 text-red-600 flex items-center justify-center shrink-0 font-bold text-xs">
-                    PDF
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
-                      {sample.title}
-                    </h4>
-                    <span className="inline-block bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded mt-1 font-mono font-medium">
-                      {sample.badge}
-                    </span>
-                  </div>
-                </div>
-                <button className="text-xs text-blue-600 font-semibold group-hover:translate-x-0.5 transition-transform">
-                  Load &rarr;
-                </button>
-              </div>
-              <p className="mt-2.5 text-xs text-slate-500 line-clamp-2">
-                {sample.description}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-
     </div>
   );
 };

@@ -69,8 +69,8 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   const handleLogin = async () => {
     setIsAuthLoading(true);
     try {
-      const user = await loginWithGoogle();
-      onShowToast('Signed In with Google', `Welcome back, ${user.displayName || user.email}!`, 'success');
+      const { user } = await loginWithGoogle();
+      onShowToast('Signed In with Google', `Welcome back, ${user.displayName || user.email}! Google Drive & Cloud database enabled.`, 'success');
     } catch (err: any) {
       console.error('Login error:', err);
       onShowToast('Sign-In Failed', err.message || 'Could not complete Google authentication.', 'error');
@@ -157,7 +157,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
               <div>
                 <p className="text-xs font-bold text-slate-800">Project: {firebaseConfig.projectId}</p>
                 <p className="text-[11px] text-slate-500 font-mono truncate max-w-xs">
-                  DB: {firebaseConfig.firestoreDatabaseId || '(default)'}
+                  DB: {(firebaseConfig as any).firestoreDatabaseId || '(default)'}
                 </p>
               </div>
             </div>

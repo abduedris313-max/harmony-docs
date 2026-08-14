@@ -12,15 +12,28 @@ import {
   signOut,
   onAuthStateChanged,
   User,
+  GoogleAuthProvider,
 } from 'firebase/auth';
 import { db, auth, googleProvider } from './config';
 import { handleFirestoreError, OperationType } from './firestoreErrors';
 import { Book, DocumentFolder, HistoryItem, VersionSnapshot } from '../types';
+import {
+  saveGoogleDriveToken,
+  clearGoogleDriveToken,
+  revokeGoogleDriveToken,
+} from '../utils/googleDriveService';
 
-export const loginWithGoogle = async (): Promise<User> => {
+export const loginWithGoogle = async (): Promise<{ user: User; accessToken: string | null }> => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken || null;
+
+    if (accessToken) {
+      saveGoogleDriveToken(accessToken);
+    }
+
+    return { user: result.user, accessToken };
   } catch (error) {
     console.error('Google Sign-in Error:', error);
     throw error;
@@ -29,6 +42,8 @@ export const loginWithGoogle = async (): Promise<User> => {
 
 export const logoutUser = async (): Promise<void> => {
   try {
+    await revokeGoogleDriveToken();
+    clearGoogleDriveToken();
     await signOut(auth);
   } catch (error) {
     console.error('Sign-out Error:', error);
@@ -40,11 +55,14 @@ export const subscribeToAuth = (callback: (user: User | null) => void): Unsubscr
   return onAuthStateChanged(auth, callback);
 };
 
+import { getOrCreateDeviceId } from '../utils/syncManager';
+
 // Books CRUD in Firestore
 export const saveBookToFirestore = async (userId: string, book: Book): Promise<void> => {
   const path = `users/${userId}/books/${book.id}`;
   try {
     const bookDocRef = doc(db, 'users', userId, 'books', book.id);
+    const deviceId = getOrCreateDeviceId();
     const cleanData: Record<string, any> = {
       id: book.id,
       userId,
@@ -58,6 +76,8 @@ export const saveBookToFirestore = async (userId: string, book: Book): Promise<v
       lastReadTimestamp: book.lastReadTimestamp || Date.now(),
       tags: Array.isArray(book.tags) ? book.tags.slice(0, 20) : [],
       wordCount: typeof book.wordCount === 'number' ? book.wordCount : 0,
+      deviceId,
+      updatedAt: Date.now(),
     };
 
     if (book.author) cleanData.author = book.author;
