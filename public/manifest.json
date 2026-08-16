@@ -12,6 +12,12 @@
   "categories": ["productivity", "utilities"],
   "icons": [
     {
+      "src": "pwa-144.png",
+      "type": "image/png",
+      "sizes": "144x144",
+      "purpose": "any"
+    },
+    {
       "src": "pwa-192.png",
       "type": "image/png",
       "sizes": "192x192",

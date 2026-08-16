@@ -5,6 +5,7 @@ const PRECACHE_ASSETS = [
   './index.html',
   './manifest.json',
   './favicon.ico',
+  './pwa-144.png',
   './pwa-192.png',
   './pwa-512.png',
   './pwa-maskable-192.png',
