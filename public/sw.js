@@ -5,6 +5,12 @@ const PRECACHE_ASSETS = [
   './index.html',
   './manifest.json',
   './favicon.ico',
+  './pwa-192.png',
+  './pwa-512.png',
+  './pwa-maskable-192.png',
+  './pwa-maskable-512.png',
+  './screenshot-desktop.png',
+  './screenshot-mobile.png',
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs',
 ];
 

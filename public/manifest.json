@@ -1,7 +1,15 @@
 {
+  "id": "./",
   "short_name": "PDF2MD AI",
   "name": "PDF to Markdown AI Pro",
   "description": "Convert PDF documents to GitHub Flavored Markdown with AI structure recognition, syntax highlighting, cloud storage, and version history.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "categories": ["productivity", "utilities"],
   "icons": [
     {
       "src": "pwa-192.png",
@@ -14,12 +22,40 @@
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any"
+    },
+    {
+      "src": "pwa-maskable-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "pwa-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
-  "start_url": "./",
-  "background_color": "#f8fafc",
-  "theme_color": "#2563eb",
-  "display": "standalone",
-  "orientation": "any",
-  "categories": ["productivity", "utilities"]
+  "screenshots": [
+    {
+      "src": "screenshot-desktop.png",
+      "type": "image/png",
+      "sizes": "1280x720",
+      "form_factor": "wide",
+      "label": "Desktop Converter & Split Editor Workspace"
+    },
+    {
+      "src": "screenshot-mobile.png",
+      "type": "image/png",
+      "sizes": "720x1280",
+      "form_factor": "narrow",
+      "label": "Mobile Document Reader & AI Assistant"
+    },
+    {
+      "src": "screenshot-mobile.png",
+      "type": "image/png",
+      "sizes": "720x1280",
+      "label": "Mobile Markdown Preview"
+    }
+  ]
 }
