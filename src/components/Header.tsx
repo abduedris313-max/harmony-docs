@@ -237,9 +237,12 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Library</span>
             </button>
           ) : (
-            <div className="w-8 h-8 rounded-full bg-[#007AFF] text-white shadow-xs flex items-center justify-center font-bold shrink-0">
-              <BookOpen className="w-4 h-4" />
-            </div>
+            <img
+              src="pwa-192.png"
+              alt="PDF to Markdown Logo"
+              className="w-8 h-8 rounded-xl object-cover shadow-xs shrink-0 border border-slate-200/50"
+              referrerPolicy="no-referrer"
+            />
           )}
 
           <div className="min-w-0">
